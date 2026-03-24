@@ -1,0 +1,14 @@
+# Never commit patient data!
+data/*.csv
+data/*.tsv
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Results (comment out if you want to commit plots)
+results/
+
+# Environment
+.env
+venv/
