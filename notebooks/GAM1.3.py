@@ -1381,8 +1381,121 @@ comparison_df = pd.DataFrame({
 
 print(comparison_df.to_string(index=False))
 
-# Visualize comparison
-fig, ax = plt.subplots(figsize=(12, 7))
+# ============================================================================
+# 12B. TARGETED ABLATION: REMOVE XGB (COLUMN INDEX 2)
+# ============================================================================
+
+print("\n" + "=" * 80)
+print("STEP 12B: TARGETED ABLATION — WITHOUT XGB")
+print("=" * 80)
+
+# Reuse existing OOF/val/test arrays — no base learner retraining
+ablation_cols = [0, 1, 3]  # RSF, GBS, DeepSurv (drop index 2 = XGB)
+ablation_feats = ["RSF", "GBS", "DeepSurv"]
+
+oof_train_abl  = oof_train[:, ablation_cols]
+val_pred_abl   = val_pred[:, ablation_cols]
+test_pred_abl  = test_pred[:, ablation_cols]
+
+# Build meta DataFrames
+meta_train_abl = pd.DataFrame(oof_train_abl, columns=ablation_feats, index=X_train_sel.index)
+meta_val_abl   = pd.DataFrame(val_pred_abl,  columns=ablation_feats, index=X_val_sel.index)
+meta_test_abl  = pd.DataFrame(test_pred_abl, columns=ablation_feats, index=X_test_sel.index)
+
+# Clip val/test to train range (same logic as full ensemble)
+for feat in ablation_feats:
+    t_min, t_max = meta_train_abl[feat].min(), meta_train_abl[feat].max()
+    meta_val_abl[feat]  = meta_val_abl[feat].clip(t_min, t_max)
+    meta_test_abl[feat] = meta_test_abl[feat].clip(t_min, t_max)
+
+# Build spline basis on train (same df=4, degree=3 as full ensemble)
+abl_spline_parts  = []
+abl_design_infos  = {}
+abl_col_mapping   = {}
+
+for feat in ablation_feats:
+    spline = dmatrix(
+        f"bs({feat}, df=4, degree=3, include_intercept=False)",
+        meta_train_abl,
+        return_type='dataframe'
+    )
+    spline_cols = [f"{feat}_s{i}" for i in range(spline.shape[1])]
+    spline.columns = spline_cols
+    abl_spline_parts.append(spline)
+    abl_design_infos[feat] = spline.design_info
+    abl_col_mapping[feat]  = spline_cols
+
+meta_spline_train_abl = pd.concat(abl_spline_parts, axis=1)
+
+def transform_splines_abl(df):
+    parts = []
+    for feat in ablation_feats:
+        S = build_design_matrices([abl_design_infos[feat]], df)[0]
+        parts.append(pd.DataFrame(S, index=df.index))
+    return pd.concat(parts, axis=1)
+
+meta_spline_val_abl  = transform_splines_abl(meta_val_abl)
+meta_spline_test_abl = transform_splines_abl(meta_test_abl)
+
+# Alpha tuning on validation (same grid as full ensemble)
+print("\n✓ Tuning GAM regularization (ablation) on VALIDATION set:")
+best_alpha_abl, best_c_abl = None, -1
+
+for alpha in [0.001, 0.005, 0.01, 0.05, 0.1]:
+    gam_abl = CoxnetSurvivalAnalysis(alphas=[alpha], l1_ratio=0.9, max_iter=100000)
+    gam_abl.fit(meta_spline_train_abl.values, y_train_s)
+    c_v = concordance_index_censored(
+        y_val_s['event'], y_val_s['time'],
+        gam_abl.predict(meta_spline_val_abl.values)
+    )[0]
+    print(f"  alpha={alpha:.3f}: Val C-index = {c_v:.4f}")
+    if c_v > best_c_abl:
+        best_c_abl = c_v
+        best_alpha_abl = alpha
+
+print(f"\n✓ Best alpha (ablation): {best_alpha_abl} (Val C-index: {best_c_abl:.4f})")
+
+# Final ablation GAM
+gam_abl_final = CoxnetSurvivalAnalysis(alphas=[best_alpha_abl], l1_ratio=0.9, max_iter=100000)
+gam_abl_final.fit(meta_spline_train_abl.values, y_train_s)
+
+c_abl_val  = concordance_index_censored(
+    y_val_s['event'],  y_val_s['time'],
+    gam_abl_final.predict(meta_spline_val_abl.values)
+)[0]
+c_abl_test = concordance_index_censored(
+    y_test_s['event'], y_test_s['time'],
+    gam_abl_final.predict(meta_spline_test_abl.values)
+)[0]
+
+# Comparison table
+diff_val  = c_abl_val  - c_gam_val
+diff_test = c_abl_test - c_gam_test
+
+print("\n" + "-" * 55)
+print(f"{'Configuration':<25} | {'Val C-Index':>11} | {'Test C-Index':>12}")
+print("-" * 55)
+print(f"{'Full ensemble (4)':<25} | {c_gam_val:>11.4f} | {c_gam_test:>12.4f}")
+print(f"{'Without XGB (3)':<25} | {c_abl_val:>11.4f} | {c_abl_test:>12.4f}")
+print(f"{'Difference':<25} | {diff_val:>+11.4f} | {diff_test:>+12.4f}")
+print("-" * 55)
+
+if abs(diff_test) < 0.005:
+    print("\nXGB removal confirmed redundant — ensemble is robust.")
+else:
+    print("\nXGB contributes subtle signal despite zero GAM weight.")
+
+# Add ablation row to comparison_df for the bar chart
+ablation_row = pd.DataFrame([{
+    'Model': 'GAM w/o XGB (3)',
+    'Train_C_Index': np.nan,
+    'Val_C_Index': c_abl_val,
+    'Test_C_Index': c_abl_test
+}])
+comparison_df = pd.concat([comparison_df, ablation_row], ignore_index=True)
+
+# Visualize comparison (now includes ablation row)
+fig, ax = plt.subplots(figsize=(14, 7))
 
 models = comparison_df['Model']
 x_pos = np.arange(len(models))
@@ -1395,16 +1508,199 @@ bars2 = ax.bar(x_pos, comparison_df['Val_C_Index'], width,
 bars3 = ax.bar(x_pos + width, comparison_df['Test_C_Index'], width,
                label='Test', alpha=0.8, color='green')
 
-# Highlight ensemble
-bars3[-1].set_color('gold')
-bars3[-1].set_edgecolor('black')
-bars3[-1].set_linewidth(2)
+# Highlight full ensemble (index 4) and ablation (index 5)
+bars3[4].set_color('gold')
+bars3[4].set_edgecolor('black')
+bars3[4].set_linewidth(2)
+bars3[5].set_color('mediumpurple')
+bars3[5].set_edgecolor('black')
+bars3[5].set_linewidth(2)
 
 ax.set_ylabel('C-Index', fontsize=13, fontweight='bold')
 ax.set_xlabel('Model', fontsize=13, fontweight='bold')
-ax.set_title('Comprehensive Model Performance Comparison', fontsize=15, fontweight='bold')
+ax.set_title('Comprehensive Model Performance Comparison (with Ablation)',
+             fontsize=15, fontweight='bold')
 ax.set_xticks(x_pos)
-ax.set_xticklabels(models, rotation=0)
+ax.set_xticklabels(models, rotation=15, ha='right')
+ax.axhline(y=0.5, color='red', linestyle='--', alpha=0.3, label='Random (0.5)')
+ax.axhline(y=0.7, color='darkgreen', linestyle='--', alpha=0.3, label='Good (0.7)')
+ax.legend(fontsize=11, loc='lower right')
+ax.grid(axis='y', alpha=0.3)
+ax.set_ylim(0.45, 0.85)
+
+plt.tight_layout()
+plt.savefig(OUTPUT_DIR / 'model_comparison.png', dpi=300, bbox_inches='tight')
+plt.close()
+
+# ============================================================================
+# 12C. PAIRWISE ABLATION: 2-MODEL GAM EXPERIMENTS
+# ============================================================================
+
+print("\n" + "=" * 80)
+print("STEP 12C: PAIRWISE ABLATION — 2-MODEL GAM EXPERIMENTS")
+print("=" * 80)
+
+pairs = [
+    ("RSF + GBS",       [0, 1], ["RSF", "GBS"]),
+    ("RSF + DeepSurv",  [0, 3], ["RSF", "DeepSurv"]),
+    ("GBS + DeepSurv",  [1, 3], ["GBS", "DeepSurv"]),
+]
+
+pair_results = {}  # name -> (c_val, c_test)
+
+for pair_name, pair_cols, pair_feats in pairs:
+    print(f"\n--- {pair_name} ---")
+
+    # Slice existing arrays
+    oof_p  = oof_train[:, pair_cols]
+    val_p  = val_pred[:, pair_cols]
+    test_p = test_pred[:, pair_cols]
+
+    meta_tr  = pd.DataFrame(oof_p,  columns=pair_feats, index=X_train_sel.index)
+    meta_v   = pd.DataFrame(val_p,  columns=pair_feats, index=X_val_sel.index)
+    meta_te  = pd.DataFrame(test_p, columns=pair_feats, index=X_test_sel.index)
+
+    # Clip val/test to train range
+    for feat in pair_feats:
+        t_min, t_max = meta_tr[feat].min(), meta_tr[feat].max()
+        meta_v[feat]  = meta_v[feat].clip(t_min, t_max)
+        meta_te[feat] = meta_te[feat].clip(t_min, t_max)
+
+    # Build spline basis on train
+    p_spline_parts = []
+    p_design_infos = {}
+
+    for feat in pair_feats:
+        spline = dmatrix(
+            f"bs({feat}, df=4, degree=3, include_intercept=False)",
+            meta_tr,
+            return_type='dataframe'
+        )
+        spline.columns = [f"{feat}_s{i}" for i in range(spline.shape[1])]
+        p_spline_parts.append(spline)
+        p_design_infos[feat] = spline.design_info
+
+    spline_tr = pd.concat(p_spline_parts, axis=1)
+
+    def _transform(df):
+        parts = []
+        for feat in pair_feats:
+            S = build_design_matrices([p_design_infos[feat]], df)[0]
+            parts.append(pd.DataFrame(S, index=df.index))
+        return pd.concat(parts, axis=1)
+
+    spline_v  = _transform(meta_v)
+    spline_te = _transform(meta_te)
+
+    # Alpha tuning on validation
+    best_a, best_cv = None, -1
+    for alpha in [0.001, 0.005, 0.01, 0.05, 0.1]:
+        g = CoxnetSurvivalAnalysis(alphas=[alpha], l1_ratio=0.9, max_iter=100000)
+        g.fit(spline_tr.values, y_train_s)
+        cv = concordance_index_censored(
+            y_val_s['event'], y_val_s['time'],
+            g.predict(spline_v.values)
+        )[0]
+        print(f"  alpha={alpha:.3f}: Val C-index = {cv:.4f}")
+        if cv > best_cv:
+            best_cv = cv
+            best_a = alpha
+
+    print(f"  Best alpha: {best_a} (Val C-index: {best_cv:.4f})")
+
+    # Final GAM for this pair
+    g_final = CoxnetSurvivalAnalysis(alphas=[best_a], l1_ratio=0.9, max_iter=100000)
+    g_final.fit(spline_tr.values, y_train_s)
+
+    c_v  = concordance_index_censored(
+        y_val_s['event'],  y_val_s['time'],  g_final.predict(spline_v.values)
+    )[0]
+    c_te = concordance_index_censored(
+        y_test_s['event'], y_test_s['time'], g_final.predict(spline_te.values)
+    )[0]
+
+    pair_results[pair_name] = (c_v, c_te)
+    print(f"  Val C-index: {c_v:.4f}  |  Test C-index: {c_te:.4f}")
+
+    # Add to comparison_df
+    comparison_df = pd.concat([comparison_df, pd.DataFrame([{
+        'Model': f"{pair_name} (2)",
+        'Train_C_Index': np.nan,
+        'Val_C_Index': c_v,
+        'Test_C_Index': c_te
+    }])], ignore_index=True)
+
+# Unified summary table
+print("\n" + "-" * 57)
+print(f"{'Configuration':<25} | {'Val C-Index':>11} | {'Test C-Index':>12}")
+print("-" * 57)
+print(f"{'Full ensemble (4)':<25} | {c_gam_val:>11.4f} | {c_gam_test:>12.4f}")
+print(f"{'Without XGB (3)':<25} | {c_abl_val:>11.4f} | {c_abl_test:>12.4f}")
+for pair_name, (c_v, c_te) in pair_results.items():
+    label = f"{pair_name} (2)"
+    print(f"{label:<25} | {c_v:>11.4f} | {c_te:>12.4f}")
+print("-" * 57)
+
+# Interpretation
+best_pair_name = max(pair_results, key=lambda k: pair_results[k][1])
+best_pair_val, best_pair_test = pair_results[best_pair_name]
+gap = best_pair_test - c_gam_test
+
+print(f"\nBest pair: {best_pair_name} (Test C-index: {best_pair_test:.4f}). "
+      f"Gap from full ensemble: {gap:+.4f}.")
+
+if gap > 0:
+    print(f"{best_pair_name} marginally outperforms the full ensemble on test set — "
+          f"likely noise given n=101, but suggests RSF and GBS capture complementary signal.")
+elif abs(gap) < 0.005:
+    print("Best pair within 0.005 of full ensemble — two models may be sufficient.")
+else:
+    print("All three contributing models add meaningful signal — "
+          "dropping any pair hurts performance.")
+
+# Regenerate model_comparison.png with pair rows included
+fig, ax = plt.subplots(figsize=(16, 7))
+
+models_plot = comparison_df['Model']
+x_pos = np.arange(len(models_plot))
+width = 0.25
+
+bars1 = ax.bar(x_pos - width, comparison_df['Train_C_Index'], width,
+               label='Train (CV)', alpha=0.8, color='steelblue')
+bars2 = ax.bar(x_pos, comparison_df['Val_C_Index'], width,
+               label='Validation', alpha=0.8, color='orange')
+bars3 = ax.bar(x_pos + width, comparison_df['Test_C_Index'], width,
+               label='Test', alpha=0.8, color='green')
+
+# Highlight full ensemble
+idx_full = comparison_df[comparison_df['Model'] == 'GAM Ensemble'].index[0]
+bars3[idx_full].set_color('gold')
+bars3[idx_full].set_edgecolor('black')
+bars3[idx_full].set_linewidth(2)
+
+# Highlight 3-model ablation
+idx_abl = comparison_df[comparison_df['Model'] == 'GAM w/o XGB (3)'].index[0]
+bars3[idx_abl].set_color('mediumpurple')
+bars3[idx_abl].set_edgecolor('black')
+bars3[idx_abl].set_linewidth(2)
+
+# Highlight pair rows
+for pair_name in pair_results:
+    label = f"{pair_name} (2)"
+    idx_p = comparison_df[comparison_df['Model'] == label].index[0]
+    bars2[idx_p].set_color('lightcoral')
+    bars2[idx_p].set_edgecolor('black')
+    bars2[idx_p].set_linewidth(1.5)
+    bars3[idx_p].set_color('lightcoral')
+    bars3[idx_p].set_edgecolor('black')
+    bars3[idx_p].set_linewidth(1.5)
+
+ax.set_ylabel('C-Index', fontsize=13, fontweight='bold')
+ax.set_xlabel('Model', fontsize=13, fontweight='bold')
+ax.set_title('Comprehensive Model Performance Comparison (with Ablation & Pairs)',
+             fontsize=15, fontweight='bold')
+ax.set_xticks(x_pos)
+ax.set_xticklabels(models_plot, rotation=20, ha='right')
 ax.axhline(y=0.5, color='red', linestyle='--', alpha=0.3, label='Random (0.5)')
 ax.axhline(y=0.7, color='darkgreen', linestyle='--', alpha=0.3, label='Good (0.7)')
 ax.legend(fontsize=11, loc='lower right')
@@ -1520,7 +1816,13 @@ print("\n" + "=" * 80)
 print("KEY FINDINGS")
 print("=" * 80)
 print(f"✓ GAM Ensemble Test C-Index: {c_gam_test:.4f} [{ci_low:.4f}, {ci_high:.4f}]")
-print(f"✓ Best individual model: {comparison_df.loc[comparison_df['Test_C_Index'].idxmax(), 'Model']}")
-print(f"✓ Improvement over best base: {(c_gam_test - comparison_df['Test_C_Index'][:-1].max()):.4f}")
+base_models = ['RSF', 'GBS', 'XGB', 'DeepSurv']
+best_base_model = comparison_df[
+    comparison_df['Model'].isin(base_models)
+].loc[lambda x: x['Test_C_Index'].idxmax(), 'Model']
+print(f"✓ Best individual model: {best_base_model}")
+base_models = ['RSF', 'GBS', 'XGB', 'DeepSurv']
+best_base_test = comparison_df[comparison_df['Model'].isin(base_models)]['Test_C_Index'].max()
+print(f"✓ Improvement over best base: {(c_gam_test - best_base_test):.4f}")
 print(f"✓ Risk stratification: p = {logrank_low_high.p_value:.4e}")
 print("\n" + "=" * 80)
