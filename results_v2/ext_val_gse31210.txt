@@ -1,0 +1,16 @@
+EXTERNAL VALIDATION — GSE31210
+==================================================
+n=226  events=35  genes=DKK1, FAM83A, RHOV, IRX5, SFTA3, CD1B, PKP2, TNS4, LYPD3, TFAP2A
+
+  RSF                 : 0.5414
+  GBS                 : 0.4767
+  XGBoost-Cox         : 0.5378
+  DeepSurv            : 0.6261
+  Linear Stacking     : 0.5101
+  SAGAM (ours)        : 0.5959
+
+SAGAM 95% CI:   [0.4834, 0.7085]
+Linear 95% CI:  [0.3902, 0.6161]
+SAGAM - Linear: +0.0858
+
+Log-rank Low vs High: p=3.0362e-02 [*]

@@ -1,0 +1,146 @@
+\relax 
+\citation{sung2021global}
+\citation{cancer2014comprehensive}
+\citation{ishwaran2008random}
+\citation{hothorn2006survival}
+\citation{chen2016xgboost}
+\citation{katzman2018deepsurv}
+\citation{binder2009boosting}
+\citation{van2007super}
+\citation{lyu2026supersurv,golmakani2024joint}
+\citation{zhao2024bayesian}
+\citation{vock2016adapting}
+\citation{coxnam2023}
+\citation{crispnam2025}
+\@writefile{toc}{\contentsline {section}{\numberline {I}Introduction}{1}{}\protected@file@percent }
+\newlabel{eq:sagam}{{1}{1}{}{}{}}
+\citation{astley2022lung,he2024immune}
+\citation{he2024immune}
+\citation{bartholomai2019survival}
+\citation{chen2020multiomics}
+\citation{van2007super}
+\citation{lyu2026supersurv}
+\citation{golmakani2024joint}
+\citation{zhao2024bayesian}
+\citation{huang2023twostage}
+\citation{effective2024lung}
+\citation{hastie1990gam}
+\citation{therneau2000modeling}
+\citation{coxfnn2024}
+\citation{coxnam2023}
+\citation{crispnam2025}
+\citation{coxmos2025}
+\citation{golmakani2024joint}
+\citation{zhao2024bayesian}
+\citation{huang2023twostage}
+\citation{lyu2026supersurv}
+\citation{katzman2018deepsurv}
+\citation{cerami2012cbio}
+\citation{buffa2010hypoxia}
+\@writefile{toc}{\contentsline {section}{\numberline {II}Related Work}{2}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-A}}Survival Models for LUAD}{2}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-B}}Survival Ensemble Stacking}{2}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-C}}GAMs and Splines in Survival Analysis}{2}{}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {I}{\ignorespaces Comparison of Survival Stacking Approaches}}{2}{}\protected@file@percent }
+\newlabel{tab:related}{{I}{2}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-D}}Related Work Comparison}{2}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {III}Methods}{2}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-A}}Dataset and Features}{2}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-B}}Five-Fold Nested Cross-Validation}{2}{}\protected@file@percent }
+\citation{ishwaran2008random}
+\citation{hothorn2006survival}
+\citation{chen2016xgboost}
+\citation{katzman2018deepsurv}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-C}}Cox Baselines}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-D}}SAGAM Meta-Learner}{3}{}\protected@file@percent }
+\newlabel{eq:spline}{{2}{3}{}{}{}}
+\newlabel{eq:cox}{{3}{3}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-E}}Linear Cox Stacking Baseline}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-F}}External Validation}{3}{}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {II}{\ignorespaces Model Hyperparameters}}{3}{}\protected@file@percent }
+\newlabel{tab:hyperparams}{{II}{3}{}{}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {III}{\ignorespaces Full Performance Comparison — TCGA-LUAD 5-Fold Nested CV (n\,=\,501). Stage-only Cox achieves the highest mean C-index; SAGAM achieves the best stacking performance with lowest variance.}}{3}{}\protected@file@percent }
+\newlabel{tab:baselines}{{III}{3}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-G}}Hyperparameters}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-H}}Statistical Testing}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {IV}Results}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-A}}Cox Baselines and Internal Discrimination}{3}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Mean $\pm $ std C-index across five outer folds (TCGA-LUAD, 5-fold nested CV). Stage-only Cox achieves the highest mean; SAGAM achieves the best stacking performance with lowest variance.}}{4}{}\protected@file@percent }
+\newlabel{fig:perf}{{1}{4}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-B}}Performance Overview}{4}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-C}}Per-Fold Analysis and Ablation}{4}{}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {IV}{\ignorespaces Ctd-AUC (higher is better) and IBS (lower is better), mean\,$\pm $\,std across 5 outer folds (TCGA-LUAD). IBS not reported for XGBoost-Cox and DeepSurv (calibrated survival functions not estimated in current implementation). SAGAM achieves the best value in both metrics among all stacking approaches.}}{4}{}\protected@file@percent }
+\newlabel{tab:ctdauc}{{IV}{4}{}{}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {V}{\ignorespaces Per-Fold Test C-Indices (5-Fold Nested CV, TCGA-LUAD). Among base learners and stacking methods, SAGAM is the top-performing model in four of five folds. Stage-only Cox (not shown) is strongest overall (0.657\,$\pm $\,0.044).}}{4}{}\protected@file@percent }
+\newlabel{tab:results}{{V}{4}{}{}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {VI}{\ignorespaces Full 4-Learner SAGAM Spline df Sensitivity. Meta-learner refitted across df values using \emph  {fixed} OOF base learner predictions from the main pipeline; these values are not directly comparable to Table~\ref {tab:baselines} (0.634), which reruns the full nested training procedure per fold. df\,=\,4 achieves the best mean C-index and lowest fold-to-fold variance within this ablation.}}{5}{}\protected@file@percent }
+\newlabel{tab:df_ablation}{{VI}{5}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-D}}Spline Degree-of-Freedom Ablation}{5}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-E}}Clinical Risk Stratification}{5}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-F}}Feature Block Analysis}{5}{}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {VII}{\ignorespaces Nonlinearity of SAGAM Smooth Functions $f_k$ (Mean Across 5 Folds). NonlinFrac = $1 - R^2_{\text  {linear}}$; RMSD = deviation from best-fit line. All four base learners show substantial nonlinearity, confirming that a fixed scalar weight cannot adequately represent their contribution.}}{5}{}\protected@file@percent }
+\newlabel{tab:nonlinearity}{{VII}{5}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-G}}Smooth Contribution Analysis}{5}{}\protected@file@percent }
+\newlabel{sec:nonlinear_analysis}{{\mbox  {IV-G}}{5}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-H}}Nonlinearity Quantification}{5}{}\protected@file@percent }
+\newlabel{sec:nonlinear_quant}{{\mbox  {IV-H}}{5}{}{}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Kaplan-Meier overall survival by SAGAM risk tertile with number-at-risk table. Pooled OOF predictions from 5-fold nested CV, TCGA-LUAD (n\,=\,501, 181 events). Log-rank (low vs.\ high): $p = 6.94\times 10^{-5}$ (***).}}{6}{}\protected@file@percent }
+\newlabel{fig:km}{{2}{6}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-I}}Subgroup Analysis by AJCC Stage}{6}{}\protected@file@percent }
+\newlabel{sec:subgroup}{{\mbox  {IV-I}}{6}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-J}}Feature Selection Stability}{6}{}\protected@file@percent }
+\citation{lyu2026supersurv,golmakani2024joint,zhao2024bayesian,vock2016adapting,huang2023twostage}
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces SAGAM smooth contribution functions $f_k(s)$ per base learner (outer fold~1), each in its own panel. Standardized x-axis; dashed line shows linear stacking equivalent. All four functions are nonlinear, validating the B-spline parameterization.}}{7}{}\protected@file@percent }
+\newlabel{fig:smooths}{{3}{7}{}{}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces SAGAM smooth function $f_k$ stability across all 5 outer folds. Each panel shows one base learner; thin lines = individual folds; thick black line = mean. The consistent nonlinear shapes across folds confirm that the nonlinearity is a stable data property, not a fold-specific artifact.}}{7}{}\protected@file@percent }
+\newlabel{fig:stability}{{4}{7}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-K}}External Validation on Two Independent Cohorts}{7}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Time-dependent Brier score (outer fold~1; lower = lower time-dependent prediction error). Shaded region: time points where SAGAM $<$ Linear Stacking. Mean IBS across all 5 folds: SAGAM 0.177, Linear 0.184, RSF 0.181, GBS 0.197 (Table~\ref {tab:ctdauc}).}}{7}{}\protected@file@percent }
+\newlabel{fig:brier}{{5}{7}{}{}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {VIII}{\ignorespaces Subgroup Analysis by AJCC Stage (Pooled OOF, 501 TCGA patients). SAGAM's advantage is largest in Stage~I/II, where SAGAM shows its largest observed advantage over linear stacking.}}{7}{}\protected@file@percent }
+\newlabel{tab:subgroup}{{VIII}{7}{}{}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {V}Discussion}{7}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces External validation Kaplan-Meier curves on GSE31210 (n\,=\,226, stage I/II pure LUAD, 35 OS events). SAGAM trained on TCGA only. Log-rank (low vs.\ high): $p = 0.030$ (*).}}{8}{}\protected@file@percent }
+\newlabel{fig:ext_km}{{6}{8}{}{}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {IX}{\ignorespaces Top-10 Stably Selected Features (5-Fold Nested CV)}}{8}{}\protected@file@percent }
+\newlabel{tab:features}{{IX}{8}{}{}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {X}{\ignorespaces External Validation on Two Independent LUAD Cohorts. SAGAM outperforms linear stacking on stage~I/II LUAD (GSE31210, $\Delta \!=\!+0.086$) but not on the all-stage Director's Challenge cohort (GSE68465, $\Delta \!=\!-0.026$), consistent with stage-dependent subgroup patterns observed internally. $^\dagger $KM log-rank $p$ tests SAGAM risk-group separation, not C-index superiority over linear stacking. Bootstrap CIs reported for stacking models; base-learner CIs were omitted to focus uncertainty reporting on the primary stacking comparison (future work will report uncertainty for all external models). Stage-only Cox not evaluated on GSE68465 (stage not sufficiently harmonized).}}{8}{}\protected@file@percent }
+\newlabel{tab:external}{{X}{8}{}{}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces External validation Kaplan-Meier curves on GSE68465 (Director's Challenge Consortium; n\,=\,432, all stages, 226 OS events). SAGAM trained on TCGA only ($\Delta $(SAGAM$-$Linear)\,=\,$-0.026$, NS). Unlike the stage~I/II GSE31210 cohort, base learners perform within a narrow band (0.548--0.576), leaving little room for nonlinear reweighting.}}{9}{}\protected@file@percent }
+\newlabel{fig:ext_km_gse68465}{{7}{9}{}{}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {XI}{\ignorespaces DeepSurv vs.\ SAGAM: Complementary Roles}}{9}{}\protected@file@percent }
+\newlabel{tab:deepsurv_compare}{{XI}{9}{}{}{}}
+\bibcite{sung2021global}{1}
+\bibcite{cancer2014comprehensive}{2}
+\bibcite{cox1972regression}{3}
+\bibcite{ishwaran2008random}{4}
+\bibcite{hothorn2006survival}{5}
+\bibcite{chen2016xgboost}{6}
+\bibcite{katzman2018deepsurv}{7}
+\bibcite{lyu2026supersurv}{8}
+\bibcite{golmakani2024joint}{9}
+\bibcite{zhao2024bayesian}{10}
+\bibcite{vock2016adapting}{11}
+\bibcite{van2007super}{12}
+\bibcite{huang2023twostage}{13}
+\bibcite{effective2024lung}{14}
+\bibcite{hastie1990gam}{15}
+\bibcite{therneau2000modeling}{16}
+\bibcite{coxfnn2024}{17}
+\bibcite{coxmos2025}{18}
+\@writefile{toc}{\contentsline {section}{\numberline {VI}Conclusion}{10}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{References}{10}{}\protected@file@percent }
+\bibcite{astley2022lung}{19}
+\bibcite{bartholomai2019survival}{20}
+\bibcite{he2024immune}{21}
+\bibcite{buffa2010hypoxia}{22}
+\bibcite{chen2020multiomics}{23}
+\bibcite{polsterl2020scikit}{24}
+\bibcite{paszke2019pytorch}{25}
+\bibcite{harrell1982evaluating}{26}
+\bibcite{cerami2012cbio}{27}
+\bibcite{davidson2019lifelines}{28}
+\bibcite{binder2009boosting}{29}
+\bibcite{coxnam2023}{30}
+\bibcite{crispnam2025}{31}
+\gdef \@abspage@last{11}

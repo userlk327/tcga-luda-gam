@@ -12,3 +12,4 @@ results/
 # Environment
 .env
 venv/
+myenv/

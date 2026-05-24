@@ -1,0 +1,16 @@
+EXTERNAL VALIDATION — GSE68465
+==================================================
+n=432  events=226  genes=DKK1, IRX5, CD1B, PKP2, TNS4, LYPD3, TFAP2A
+
+  RSF                 : 0.5764
+  GBS                 : 0.5540
+  XGBoost-Cox         : 0.5476
+  DeepSurv            : 0.5716
+  Linear Stacking     : 0.5748
+  SAGAM (ours)        : 0.5488
+
+SAGAM 95% CI:   [0.5075, 0.5886]
+Linear 95% CI:  [0.5326, 0.6120]
+SAGAM - Linear: -0.0260
+
+Log-rank Low vs High: p=1.5292e-01 [NS]
