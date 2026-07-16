@@ -216,16 +216,22 @@ X_train_p = preprocessor.fit_transform(X_train)
 X_val_p = preprocessor.transform(X_val)
 X_test_p = preprocessor.transform(X_test)
 
-# Build feature names - must match actual output shape
-ohe = preprocessor.named_transformers_['cat']
-cat_names = ohe.get_feature_names_out(cat_cols).tolist() if len(cat_cols) > 0 else []
-feat_names = cat_names + num_cols
+# Build feature names directly from the fitted ColumnTransformer so they
+# stay aligned with the actual output width. A manual cat_names + num_cols
+# concat over-counts because SimpleImputer silently drops all-NaN columns
+# (here 'Neoplasm Histologic Grade' and 'Patient Weight' are 100% missing).
+# Strip the 'cat__' / 'num__' transformer prefix for readable names.
+feat_names = [
+    name.split("__", 1)[-1]
+    for name in preprocessor.get_feature_names_out()
+]
 
-# Verify dimensions match - if not, use generic names
-if len(feat_names) != X_train_p.shape[1]:
-    print(f"⚠ Warning: Expected {len(feat_names)} features, got {X_train_p.shape[1]}")
-    print(f"  Using generic feature names...")
-    feat_names = [f"feature_{i}" for i in range(X_train_p.shape[1])]
+# get_feature_names_out is contractually aligned with the output; assert to
+# catch any future regression rather than silently falling back to generic names.
+assert len(feat_names) == X_train_p.shape[1], (
+    f"Feature-name mismatch: {len(feat_names)} names vs {X_train_p.shape[1]} columns"
+)
+print(f"✓ Feature names resolved: {len(feat_names)} (interpretable, no generic fallback)")
 
 X_train_df = pd.DataFrame(X_train_p, columns=feat_names, index=X_train.index)
 X_val_df = pd.DataFrame(X_val_p, columns=feat_names, index=X_val.index)
@@ -263,7 +269,7 @@ print("=" * 80)
 alphas = np.logspace(-3, 1, 20)
 cv = KFold(5, shuffle=True, random_state=SEED)
 best_score = -1.0
-best_alpha = None
+best_alpha_coxnet = None
 
 # Track feature selection across CV folds
 feature_selection_counts = {feat: 0 for feat in X_train_raw.columns}
@@ -298,13 +304,13 @@ for alpha in alphas:
 
     if mean_score > best_score:
         best_score = mean_score
-        best_alpha = alpha
+        best_alpha_coxnet = alpha
 
-print(f"✓ Best alpha: {best_alpha:.2e} (CV C-index: {best_score:.3f})")
+print(f"✓ Best alpha: {best_alpha_coxnet:.2e} (CV C-index: {best_score:.3f})")
 
 # Fit final CoxNet on full train set
 final_coxnet = CoxnetSurvivalAnalysis(
-    alphas=[best_alpha], l1_ratio=0.9, max_iter=100000
+    alphas=[best_alpha_coxnet], l1_ratio=0.9, max_iter=100000
 )
 final_coxnet.fit(X_train_raw.values, y_train)
 
@@ -418,6 +424,16 @@ for fold, (tr_idx, val_idx) in enumerate(kf.split(X_train_sel)):
     yt = y_train[tr_idx]
     yv = y_train[val_idx]
 
+    # Nested internal split of THIS fold's training portion, used ONLY for
+    # early stopping of XGB/DeepSurv. The held-out fold (Xv) must never
+    # influence round count or epoch selection — otherwise the OOF meta-
+    # features leak. RSF/GBS have no early stopping and train on full Xt.
+    es_tr_idx, es_val_idx = train_test_split(
+        np.arange(len(Xt)), test_size=0.2, random_state=SEED, stratify=yt['event']
+    )
+    Xt_es, Xt_esval = Xt[es_tr_idx], Xt[es_val_idx]
+    yt_es, yt_esval = yt[es_tr_idx], yt[es_val_idx]
+
     # ========== Random Survival Forest ==========
     rsf = RandomSurvivalForest(
         n_estimators=500,
@@ -459,58 +475,68 @@ for fold, (tr_idx, val_idx) in enumerate(kf.split(X_train_sel)):
         "verbosity": 0
     }
 
+    # survival:cox convention: sign of label encodes censoring
+    # (positive time = event observed, negative time = right-censored).
+    # Using weight=event would instead drop censored patients entirely.
+    # Early stopping uses the nested split (Xt_esval), NOT the held-out fold.
     dtrain = xgb.DMatrix(
-        Xt,
-        label=[e["time"] for e in yt],
-        weight=[e["event"] for e in yt]
+        Xt_es,
+        label=[e["time"] if e["event"] else -e["time"] for e in yt_es]
     )
-    dval = xgb.DMatrix(
-        Xv,
-        label=[e["time"] for e in yv],
-        weight=[e["event"] for e in yv]
+    dval_es = xgb.DMatrix(
+        Xt_esval,
+        label=[e["time"] if e["event"] else -e["time"] for e in yt_esval]
     )
 
     xgb_model = xgb.train(
         params=xgb_params,
         dtrain=dtrain,
         num_boost_round=2000,
-        evals=[(dval, "val")],
+        evals=[(dval_es, "val")],
         early_stopping_rounds=100,
         verbose_eval=False
     )
 
-    it_end = getattr(xgb_model, "best_iteration", xgb_model.num_boosted_rounds())
-    oof_train[val_idx, 2] = xgb_model.predict(dval, iteration_range=(0, it_end))
+    # iteration_range end is exclusive and best_iteration is 0-indexed,
+    # so include the best round with +1. Fallback count is already exclusive.
+    it_end = (xgb_model.best_iteration + 1) if hasattr(xgb_model, "best_iteration") \
+        else xgb_model.num_boosted_rounds()
+    oof_train[val_idx, 2] = xgb_model.predict(
+        xgb.DMatrix(Xv), iteration_range=(0, it_end)
+    )
 
     c_xgb = concordance_index_censored(yv['event'], yv['time'], oof_train[val_idx, 2])[0]
     model_performance['XGB'].append(c_xgb)
     print(f"  XGB C-index: {c_xgb:.4f}")
 
     # ========== DeepSurv Neural Network ==========
+    # Early stopping uses the nested split (Xt_esval), NOT the held-out fold.
     net = DeepSurv(Xt.shape[1]).to(device)
     optimizer = optim.Adam(net.parameters(), lr=1e-3, weight_decay=1e-4)
 
-    Xt_t = torch.tensor(Xt, dtype=torch.float32).to(device)
+    Xtes_t = torch.tensor(Xt_es, dtype=torch.float32).to(device)
+    Xtesval_t = torch.tensor(Xt_esval, dtype=torch.float32).to(device)
     Xv_t = torch.tensor(Xv, dtype=torch.float32).to(device)
-    yt_time = torch.tensor([e["time"] for e in yt], dtype=torch.float32).to(device)
-    yt_event = torch.tensor([e["event"] for e in yt], dtype=torch.float32).to(device)
-    yv_time = torch.tensor([e["time"] for e in yv], dtype=torch.float32).to(device)
-    yv_event = torch.tensor([e["event"] for e in yv], dtype=torch.float32).to(device)
+    ytes_time = torch.tensor([e["time"] for e in yt_es], dtype=torch.float32).to(device)
+    ytes_event = torch.tensor([e["event"] for e in yt_es], dtype=torch.float32).to(device)
+    ytesval_time = torch.tensor([e["time"] for e in yt_esval], dtype=torch.float32).to(device)
+    ytesval_event = torch.tensor([e["event"] for e in yt_esval], dtype=torch.float32).to(device)
 
     best_val_loss = np.inf
+    best_state = None
     patience = 25
     wait = 0
 
     for epoch in range(400):
         net.train()
         optimizer.zero_grad()
-        loss = cox_ph_loss(net(Xt_t), yt_time, yt_event)
+        loss = cox_ph_loss(net(Xtes_t), ytes_time, ytes_event)
         loss.backward()
         optimizer.step()
 
         net.eval()
         with torch.no_grad():
-            val_loss = cox_ph_loss(net(Xv_t), yv_time, yv_event).item()
+            val_loss = cox_ph_loss(net(Xtesval_t), ytesval_time, ytesval_event).item()
 
         if val_loss < best_val_loss - 1e-6:
             best_val_loss = val_loss
@@ -521,7 +547,7 @@ for fold, (tr_idx, val_idx) in enumerate(kf.split(X_train_sel)):
             if wait >= patience:
                 break
 
-    if 'best_state' in locals():
+    if best_state is not None:
         net.load_state_dict(best_state)
 
     net.eval()
@@ -550,7 +576,7 @@ print(perf_summary.to_string(index=False))
 plt.figure(figsize=(10, 6))
 plt.boxplot(
     [model_performance[m] for m in ['RSF', 'GBS', 'XGB', 'DeepSurv']],
-    labels=['RSF', 'GBS', 'XGB', 'DeepSurv']
+    tick_labels=['RSF', 'GBS', 'XGB', 'DeepSurv']
 )
 plt.ylabel('C-Index', fontsize=12)
 plt.title('Individual Model Performance Across CV Folds', fontsize=14, fontweight='bold')
@@ -613,13 +639,11 @@ print(f"✓ GBS - Val C-index: {c_gbs_val:.4f}")
 print("\nTraining final XGBoost...")
 dtrain_final = xgb.DMatrix(
     X_tr.values,
-    label=[e["time"] for e in y_tr],
-    weight=[e["event"] for e in y_tr]
+    label=[e["time"] if e["event"] else -e["time"] for e in y_tr]
 )
 dval_int = xgb.DMatrix(
     X_int_val.values,
-    label=[e["time"] for e in y_int_val],
-    weight=[e["event"] for e in y_int_val]
+    label=[e["time"] if e["event"] else -e["time"] for e in y_int_val]
 )
 
 xgb_final = xgb.train(
@@ -631,7 +655,8 @@ xgb_final = xgb.train(
     verbose_eval=False
 )
 
-it_end = getattr(xgb_final, "best_iteration", xgb_final.num_boosted_rounds())
+it_end = (xgb_final.best_iteration + 1) if hasattr(xgb_final, "best_iteration") \
+    else xgb_final.num_boosted_rounds()
 val_pred[:, 2] = xgb_final.predict(
     xgb.DMatrix(X_val_sel.values), iteration_range=(0, it_end)
 )
@@ -655,6 +680,7 @@ yiv_time = torch.tensor([e["time"] for e in y_int_val], dtype=torch.float32).to(
 yiv_event = torch.tensor([e["event"] for e in y_int_val], dtype=torch.float32).to(device)
 
 best_val_loss = np.inf
+best_state = None
 patience = 25
 wait = 0
 
@@ -678,7 +704,7 @@ for epoch in range(400):
         if wait >= patience:
             break
 
-if 'best_state' in locals():
+if best_state is not None:
     net_final.load_state_dict(best_state)
 
 net_final.eval()
@@ -769,7 +795,7 @@ y_test_s = np.array(
 
 # Tune GAM alpha on VALIDATION (independent set!)
 print("\n✓ Tuning GAM regularization on VALIDATION set:")
-best_alpha, best_c = None, -1
+best_alpha_gam, best_c = None, -1
 alpha_results = []
 
 for alpha in [0.001, 0.005, 0.01, 0.05, 0.1]:
@@ -787,12 +813,12 @@ for alpha in [0.001, 0.005, 0.01, 0.05, 0.1]:
 
     if c_val > best_c:
         best_c = c_val
-        best_alpha = alpha
+        best_alpha_gam = alpha
 
-print(f"\n✓ Best alpha: {best_alpha} (Val C-index: {best_c:.4f})")
+print(f"\n✓ Best alpha: {best_alpha_gam} (Val C-index: {best_c:.4f})")
 
 # Train final GAM with best alpha
-gam_final = CoxnetSurvivalAnalysis(alphas=[best_alpha], l1_ratio=0.9, max_iter=100000)
+gam_final = CoxnetSurvivalAnalysis(alphas=[best_alpha_gam], l1_ratio=0.9, max_iter=100000)
 gam_final.fit(meta_spline_train.values, y_train_s)
 
 # Predictions
@@ -1480,10 +1506,14 @@ print(f"{'Without XGB (3)':<25} | {c_abl_val:>11.4f} | {c_abl_test:>12.4f}")
 print(f"{'Difference':<25} | {diff_val:>+11.4f} | {diff_test:>+12.4f}")
 print("-" * 55)
 
-if abs(diff_test) < 0.005:
-    print("\nXGB removal confirmed redundant — ensemble is robust.")
+if abs(diff_test) < 0.02:
+    print("\nDropping XGB shifts test C-index by "
+          f"{diff_test:+.4f} — within bootstrap noise at n≈101, so no reliable "
+          "difference. Interpret as: XGB is not clearly necessary here.")
 else:
-    print("\nXGB contributes subtle signal despite zero GAM weight.")
+    print(f"\nDropping XGB shifts test C-index by {diff_test:+.4f}. This exceeds "
+          "typical bootstrap noise at n≈101 and warrants a closer look, but "
+          "should be confirmed against the bootstrap CI before drawing conclusions.")
 
 # Add ablation row to comparison_df for the bar chart
 ablation_row = pd.DataFrame([{
@@ -1649,14 +1679,14 @@ gap = best_pair_test - c_gam_test
 print(f"\nBest pair: {best_pair_name} (Test C-index: {best_pair_test:.4f}). "
       f"Gap from full ensemble: {gap:+.4f}.")
 
-if gap > 0:
-    print(f"{best_pair_name} marginally outperforms the full ensemble on test set — "
-          f"likely noise given n=101, but suggests RSF and GBS capture complementary signal.")
-elif abs(gap) < 0.005:
-    print("Best pair within 0.005 of full ensemble — two models may be sufficient.")
+if abs(gap) < 0.02:
+    print(f"Best pair differs from the full ensemble by {gap:+.4f} on test — "
+          "within bootstrap noise at n≈101, so this is not evidence that the pair "
+          "is better or worse; two models may simply be sufficient here.")
 else:
-    print("All three contributing models add meaningful signal — "
-          "dropping any pair hurts performance.")
+    print(f"Best pair differs from the full ensemble by {gap:+.4f} on test, which "
+          "exceeds typical bootstrap noise at n≈101. Treat as a hypothesis to "
+          "confirm against the bootstrap CI rather than a definitive result.")
 
 # Regenerate model_comparison.png with pair rows included
 fig, ax = plt.subplots(figsize=(16, 7))
@@ -1735,7 +1765,7 @@ with open(OUTPUT_DIR / "complete_analysis.txt", "w") as f:
     f.write("=" * 80 + "\n")
     f.write("2. FEATURE SELECTION (COXNET)\n")
     f.write("=" * 80 + "\n")
-    f.write(f"Best alpha: {best_alpha:.2e}\n")
+    f.write(f"Best alpha: {best_alpha_coxnet:.2e}\n")
     f.write(f"Selected features: {len(selected_features)}\n\n")
     f.write("Top 20 Features by Coefficient:\n")
     f.write(coef_df.head(20)[['Feature', 'Coefficient']].to_string(index=False))
@@ -1781,12 +1811,12 @@ results_summary = {
     'Metric': [
         'Train C-Index', 'Val C-Index', 'Test C-Index',
         'Bootstrap CI Low', 'Bootstrap CI High',
-        'Selected Features', 'Best CoxNet Alpha'
+        'Selected Features', 'Best CoxNet Alpha', 'Best GAM Alpha'
     ],
     'Value': [
         c_gam_train, c_gam_val, c_gam_test,
         ci_low, ci_high,
-        len(selected_features), best_alpha
+        len(selected_features), best_alpha_coxnet, best_alpha_gam
     ]
 }
 pd.DataFrame(results_summary).to_csv(OUTPUT_DIR / 'summary_metrics.csv', index=False)
@@ -1808,7 +1838,7 @@ print("  3. coxnet_coefficients.png - Feature importance visualization")
 print("  4. model_performance_boxplot.png - CV performance comparison")
 print("  5. gam_contributions.png - GAM model contributions")
 print("  6. gam_smooths.png - Smooth function plots")
-print("  7. kaplan_meier_risk_groups.png - Survival curves")
+print("  7. kaplan_meier_improved.png / kaplan_meier_clean.png - Survival curves")
 print("  8. bootstrap_distribution.png - CI visualization")
 print("  9. model_comparison.png - Final performance comparison")
 
