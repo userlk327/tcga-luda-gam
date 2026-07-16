@@ -1,0 +1,406 @@
+\documentclass[journal]{IEEEtran}
+
+% --- packages ---
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{url}
+\usepackage{textcomp}
+\usepackage[hidelinks]{hyperref}
+
+% Figures live in ../results ; adjust if you copy them next to this file.
+\graphicspath{{../results/}{./}}
+
+\begin{document}
+
+\title{A Parsimonious, Externally Validated Additive Survival Model for Lung
+Adenocarcinoma: When Simplicity Generalizes Better Than an Ensemble}
+
+\author{
+  \IEEEauthorblockN{Author Name}%
+  \thanks{Manuscript prepared \today. Author is with the Department of
+  \emph{[affiliation]}, \emph{[institution]} (e-mail: \emph{[email]}).}%
+}
+
+\markboth{IEEE Journal, Draft}{}
+
+\maketitle
+
+\begin{abstract}
+Prognostic models for lung adenocarcinoma (LUAD) are frequently developed on a
+single cohort and are seldom validated externally or assessed for
+interpretability, which limits their clinical usefulness. We ask a narrow but
+practical question: does added model complexity translate into better
+\emph{generalizable} survival prediction? Using the TCGA-LUAD cohort
+($n=501$; $181$ deaths), we benchmarked four survival learners---random
+survival forest (RSF), gradient boosting survival (GBS), XGBoost with a Cox
+objective, and DeepSurv---together with a spline generalized-additive-model
+(GAM) stacking ensemble, against a single, transparent feature-level GAM
+(elastic-net Cox with cubic B-spline smooths on age, tumor mutational burden,
+mutation count, and fraction of genome altered; stage and sex entered
+linearly). Every model was restricted to the six clinical and genomic features
+shared with an independent external cohort (OncoSG, $n=302$; $94$ deaths), so
+that the identical model could be transported. We evaluated discrimination with
+leakage-free nested cross-validation and bootstrap confidence intervals,
+performed Kaplan--Meier risk stratification, and tested for nonlinearity with a
+likelihood-ratio (LR) test. Internally the ensemble was competitive, but on
+external validation it degraded sharply (concordance index, $C=0.595$),
+whereas the feature-level GAM transferred without loss ($C=0.660$ internal;
+$C=0.679$ external) and matched the best individual learners (XGBoost $0.675$,
+DeepSurv $0.674$). The GAM separated external risk tertiles with a log-rank
+$p=1.4\times10^{-6}$. The LR test confirmed that nonlinearity improved fit
+($\text{LR}=17.6$, $\mathrm{df}=8$, $p=0.024$), driven chiefly by a J-shaped age
+effect ($p=0.032$). A parsimonious, interpretable additive model generalized
+more reliably than a complex ensemble that overfit the development cohort,
+arguing for interpretable simplicity in cross-cohort LUAD prognosis using
+routinely available features.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Survival analysis, lung adenocarcinoma, generalized additive model, external
+validation, model interpretability, concordance index, TCGA.
+\end{IEEEkeywords}
+
+% =====================================================================
+\section{Introduction}
+% =====================================================================
+\IEEEPARstart{L}{ung} adenocarcinoma (LUAD) is the most common histological
+subtype of lung cancer and a leading cause of cancer death worldwide~\cite{siegel2023}.
+Accurate estimates of a patient's prognosis inform surveillance and treatment
+decisions, and a large body of work has applied machine learning to survival
+prediction from clinical and molecular data. Much of that work, however, shares
+two recurring weaknesses. First, models are typically reported on a single
+cohort, using internal cross-validation or a held-out split, without
+validation on a genuinely independent population; internal performance is a
+weak proxy for how a model will behave elsewhere~\cite{tripod2015}. Second, the
+better-performing methods tend to be opaque---tree ensembles, gradient boosting,
+deep networks, or stacked combinations of them---so that even when they
+discriminate well, they offer little insight a clinician can inspect or trust.
+
+We were motivated by a simple observation while building such a system. A
+carefully engineered stacking ensemble that combined four survival learners
+through a GAM meta-model performed respectably on the TCGA-LUAD cohort, yet we
+had no evidence it would hold up on new patients. When we obtained an
+independent cohort and tested it, the ensemble's advantage evaporated. That
+failure prompted the central question of this paper: for cross-cohort LUAD
+prognosis, is the complexity actually buying us anything?
+
+To answer it fairly we did two things. We restricted every model to the set of
+features that both our development and validation cohorts actually record, so
+that the same model---not a re-fitted approximation---could be transported. And
+we contrasted the ensemble and its constituent learners against a deliberately
+simple alternative: a feature-level generalized additive model that keeps the
+familiar Cox proportional-hazards form but allows smooth, nonlinear effects for
+continuous covariates~\cite{cox1972,hastie1990}. The additive model has the
+practical virtues the ensemble lacks---each covariate's contribution can be
+plotted and read directly---so if it also generalizes at least as well, the
+case for the ensemble becomes hard to make.
+
+Our contributions are: (i) a leakage-free benchmarking protocol that compares
+five modeling strategies on an identical, transportable feature set with
+external validation on an independent cohort; (ii) evidence that a stacking
+ensemble which looks competitive internally can overfit and fail to
+generalize, while a parsimonious additive model transfers without loss; and
+(iii) a formal likelihood-ratio test that isolates \emph{where} nonlinearity is
+statistically justified, so that interpretability claims rest on a test rather
+than on the appearance of a curve.
+
+% =====================================================================
+\section{Materials and Methods}
+% =====================================================================
+
+\subsection{Cohorts}
+The development cohort was the TCGA lung adenocarcinoma project
+(\texttt{luad\_tcga\_pan\_can\_atlas\_2018})~\cite{tcga2014}, obtained through
+cBioPortal~\cite{cbioportal2012}. After removing patients with missing or
+non-positive overall-survival time, $501$ patients remained, of whom $181$
+($36.1\%$) had a recorded death. The external validation cohort was the OncoSG
+East-Asian lung adenocarcinoma study (\texttt{luad\_oncosg\_2020})~\cite{chen2020},
+also from cBioPortal, comprising $302$ evaluable patients with $94$ deaths
+($31.1\%$). The two cohorts differ in ancestry, geography, and sequencing
+platform, which makes the external test a demanding one.
+
+\subsection{Features and harmonization}
+Only features present in \emph{both} cohorts were used, so that the fitted model
+could be applied unchanged to the external data. Six features met this
+criterion: age at diagnosis, sex, AJCC tumor stage, tumor mutational burden
+(TMB, nonsynonymous), somatic mutation count, and fraction of genome altered
+(FGA). Because the two cohorts encode stage at different granularity, we
+collapsed both to the four major stages (I--IV). Sex and survival-status
+encodings were reconciled between cohorts. We emphasize that this restriction is
+a requirement of honest external validation rather than a performance-driven
+feature selection; features available only in TCGA (e.g., hypoxia scores,
+aneuploidy score, microsatellite-instability metrics) were necessarily
+excluded.
+
+\subsection{Preprocessing}
+All preprocessing was fit on TCGA alone and applied to OncoSG, to avoid
+information leakage from the test cohort. Categorical variables (stage, sex)
+were one-hot encoded with the first level dropped; missing continuous values
+were median-imputed; and features were standardized. TMB and mutation count,
+which are strongly right-skewed, were $\log(1+x)$-transformed before
+standardization. For the additive model, external spline inputs were clipped to
+the training knot range so that the basis was never evaluated outside its
+support.
+
+\subsection{Models}
+We compared six strategies. The four base learners were: a random survival
+forest~\cite{ishwaran2008} ($500$ trees, $\sqrt{p}$ features per split, minimum
+leaf size $3$); gradient boosting survival analysis with regression-tree base
+learners ($500$ stages, learning rate $0.05$, tree depth $3$); XGBoost~\cite{chen2016} with the
+\texttt{survival:cox} objective and early stopping; and DeepSurv~\cite{katzman2018},
+a Cox proportional-hazards neural network ($128$--$64$--$1$ units, ReLU
+activations, dropout $0.3$, Adam optimization with early stopping). For
+survival:cox we encoded censoring through the sign of the label so that
+censored patients contribute to the risk sets rather than being discarded.
+
+The fifth strategy was a \emph{stacking ensemble}: out-of-fold predictions from
+the four base learners were combined by a GAM meta-learner (an elastic-net Cox
+model with cubic B-spline smooths on each base-learner score). To prevent
+optimistic bias, base-learner early stopping within each fold used a nested
+internal split, never the held-out fold on which predictions were formed.
+
+The sixth strategy---our proposed model---was a \emph{feature-level additive
+survival model}. It is an elastic-net Cox model ($\ell_1$ ratio $0.5$) in which
+each continuous feature enters through a cubic B-spline basis (four degrees of
+freedom), and stage and sex enter linearly:
+\begin{equation}
+\log h_i(t) = \log h_0(t) + \sum_{k} f_k(x_{ik}) + \boldsymbol{\beta}^{\top}\mathbf{z}_i,
+\end{equation}
+where $f_k$ are the estimated smooths for age, TMB, mutation count, and FGA, and
+$\mathbf{z}_i$ collects the categorical terms. The regularization strength was
+chosen by internal cross-validation. This is the only model whose effect of
+each covariate can be read directly from a plot.
+
+\subsection{Evaluation}
+Discrimination was measured by Harrell's concordance index
+($C$)~\cite{harrell1996}. Internal performance on TCGA used nested five-fold
+cross-validation for the additive model and five-fold out-of-fold predictions
+for the base learners. External performance used the model fit on all of TCGA
+and applied once to OncoSG, with $95\%$ confidence intervals from $1{,}000$
+bootstrap resamples of the external cohort. We stratified patients into risk
+tertiles and compared survival with the log-rank test and Kaplan--Meier curves.
+Finally, to test whether the additive model's flexibility was warranted, we
+performed a likelihood-ratio test comparing the full spline model against a
+model in which the same continuous covariates entered linearly, using the Cox
+partial likelihood; we report an overall test and a per-feature test. All
+experiments used a fixed random seed. Analyses were implemented in Python with
+scikit-survival~\cite{polsterl2020}.
+
+% =====================================================================
+\section{Results}
+% =====================================================================
+
+\subsection{External validation reverses the internal ranking}
+Table~\ref{tab:cindex} reports discrimination on both cohorts. Internally, the
+base learners were unremarkable ($C$ between $0.605$ and $0.650$) and the
+full-feature stacking ensemble reached a held-out $C=0.678$. The decisive
+comparison, however, is the external column. The feature-level additive model
+achieved $C=0.679$ ($95\%$ CI $0.623$--$0.735$) on OncoSG---essentially
+identical to its internal estimate of $0.660$, indicating no loss under cohort
+shift. The individual learners transported comparably (XGBoost $0.675$,
+DeepSurv $0.674$, RSF $0.660$). The stacking ensemble was the sole exception: it
+fell to $C=0.595$ ($0.530$--$0.660$), well below every model it was built from.
+In other words, the extra machinery of stacking did not merely fail to help---it
+actively hurt generalization, because the meta-learner had fit relationships
+specific to the development cohort.
+
+\begin{table}[t]
+\caption{Discrimination (concordance index) on TCGA (internal,
+cross-validated) and OncoSG (external), using the six common features. External
+values include $95\%$ bootstrap confidence intervals.}
+\label{tab:cindex}
+\centering
+\begin{tabular}{lcc}
+\toprule
+Model & TCGA (internal) & OncoSG (external) \\
+\midrule
+Feature-level GAM (proposed) & $0.660$ & $\mathbf{0.679}$ $[0.623,0.735]$ \\
+XGBoost--Cox                 & $0.605$ & $0.675$ $[0.620,0.731]$ \\
+DeepSurv                     & $0.650$ & $0.674$ $[0.614,0.733]$ \\
+Random survival forest       & $0.621$ & $0.660$ $[0.600,0.721]$ \\
+Gradient boosting survival   & $0.635$ & $0.641$ $[0.577,0.702]$ \\
+GAM stacking ensemble        & --\,\textsuperscript{a} & $0.595$ $[0.530,0.660]$ \\
+\bottomrule
+\end{tabular}
+\\[2pt]
+\raggedright
+\footnotesize\textsuperscript{a}The stacking ensemble was assessed internally
+with the full $25$-feature TCGA set (held-out $C=0.678$, $[0.561,0.775]$); on
+the six common features it is shown for external comparison only.
+\end{table}
+
+\subsection{Risk stratification holds in the external cohort}
+Stratifying OncoSG patients into tertiles of the additive model's risk score
+produced well-separated survival curves (Fig.~\ref{fig:km}), with a log-rank
+$p=1.4\times10^{-6}$ between the low- and high-risk groups (multivariable
+log-rank $p=4.6\times10^{-6}$). The same stratification on TCGA gave
+$p=6.4\times10^{-10}$. For contrast, tertiles from the stacking ensemble
+separated the external cohort far more weakly ($p=2.3\times10^{-3}$), consistent
+with its diminished discrimination.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{gam14_km_oncosg.png}
+\caption{Kaplan--Meier curves for OncoSG patients stratified into tertiles of
+the feature-level additive model's risk score. Groups are well separated on this
+fully external cohort (log-rank $p=1.4\times10^{-6}$).}
+\label{fig:km}
+\end{figure}
+
+\subsection{Where nonlinearity is (and is not) justified}
+The additive model's smooths are shown in Fig.~\ref{fig:smooths}. The
+likelihood-ratio test (Table~\ref{tab:lr}) confirms that allowing nonlinearity
+improves fit over a linear Cox model overall ($\text{LR}=17.6$, $\mathrm{df}=8$,
+$p=0.024$). Decomposed by feature, the effect is carried mainly by age
+($p=0.032$), whose contribution is J-shaped---risk is lowest in middle age and
+rises in the elderly---a pattern a linear term cannot represent. Mutation count
+was borderline ($p=0.054$). We note candidly that the visually striking curves
+for TMB and FGA are \emph{not} statistically supported ($p=0.18$ and $p=0.26$);
+for these features a linear term is adequate, and we caution against
+over-interpreting their smooths. This is precisely the kind of distinction the
+test is meant to enforce.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{gam14_smooths.png}
+\caption{Estimated smooth contributions $f_k$ (solid) with a linear reference
+(dashed) for each continuous feature, fit on TCGA. Departure from the dashed
+line indicates nonlinearity. Only the age effect is statistically significant
+(Table~\ref{tab:lr}); rug marks show data density, and the sparse tails should
+be read with caution.}
+\label{fig:smooths}
+\end{figure}
+
+\begin{table}[t]
+\caption{Likelihood-ratio test of nonlinearity (spline vs.\ linear) on TCGA,
+using the Cox partial likelihood.}
+\label{tab:lr}
+\centering
+\begin{tabular}{lccc}
+\toprule
+Term & LR statistic & df & $p$ \\
+\midrule
+Overall (spline vs.\ linear) & $17.63$ & $8$ & $\mathbf{0.024}$ \\
+Age                          & $6.89$  & $2$ & $\mathbf{0.032}$ \\
+Mutation count               & $5.82$  & $2$ & $0.054$ \\
+TMB                          & $3.48$  & $2$ & $0.176$ \\
+Fraction genome altered      & $2.69$  & $2$ & $0.261$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% =====================================================================
+\section{Discussion}
+% =====================================================================
+The pattern across Table~\ref{tab:cindex} is the paper's main message. Every
+model except the stacking ensemble carried its performance from TCGA to OncoSG;
+several even discriminated slightly better on the external cohort, which argues
+against any of them having overfit. The ensemble alone collapsed. Its
+meta-learner had been trained on the joint distribution of the base-learner
+scores in TCGA, and that geometry does not survive a change of cohort and
+sequencing platform---so the very step intended to squeeze out extra
+performance became the step that failed to transport. This is a concrete,
+cautionary instance of a familiar risk in stacked
+generalization~\cite{wolpert1992}: added flexibility at the combination stage
+can encode cohort-specific idiosyncrasies.
+
+Against that backdrop, the feature-level additive model is attractive not
+because it wins by a wide margin---on external data it is within the confidence
+interval of XGBoost and DeepSurv---but because it matches them while being
+transparent and stable. Its risk score is a sum of inspectable functions; its
+nonlinearity is limited to where a formal test supports it; and it uses only
+features a clinic would already have. For a prognostic tool intended to travel
+between institutions, those properties are worth more than a fractional,
+non-significant gain in $C$-index from an opaque model.
+
+Our study has clear limitations. It uses a single external cohort, and although
+that cohort is genuinely independent, a second would strengthen the
+generalizability claim. The model is deliberately narrow---six routinely
+available features---and richer molecular data (gene expression, driver-gene
+status, or the TCGA-only genomic scores we excluded) may well add prognostic
+signal; we traded that potential signal for transportability. The event count
+($181$ deaths) limits statistical power, which is visible in the wide confidence
+intervals and in the borderline nonlinearity of mutation count. Finally, TMB and
+mutation count are measured on different platforms across cohorts, introducing
+distributional shift in exactly the features whose nonlinearity we could not
+confirm; that the model transported regardless is reassuring, but the point
+deserves a reader's attention.
+
+% =====================================================================
+\section{Conclusion}
+% =====================================================================
+On a demanding external test, a parsimonious additive survival model for LUAD
+generalized as well as the strongest individual machine-learning learners and
+markedly better than a stacking ensemble that had looked competitive
+internally. The additive model is interpretable by construction, its
+nonlinearity is confined to where a likelihood-ratio test justifies it, and it
+depends only on features available across cohorts. For cross-cohort prognosis,
+these results favor interpretable simplicity over ensemble complexity, and they
+underline that external validation---not internal performance---is what should
+decide between competing models.
+
+% =====================================================================
+\section*{Reproducibility}
+% =====================================================================
+All preprocessing was fit on the development cohort only; a fixed random seed
+was used throughout. Analysis code is available at
+\url{https://github.com/userlk327/tcga-luda-gam}. Both cohorts are publicly
+available through cBioPortal.
+
+% =====================================================================
+\begin{thebibliography}{99}
+% =====================================================================
+\bibitem{siegel2023} R.~L. Siegel, K.~D. Miller, N.~S. Wagle, and A.~Jemal,
+``Cancer statistics, 2023,'' \emph{CA Cancer J. Clin.}, vol.~73, no.~1,
+pp.~17--48, 2023.
+
+\bibitem{tripod2015} G.~S. Collins, J.~B. Reitsma, D.~G. Altman, and K.~G.~M.
+Moons, ``Transparent reporting of a multivariable prediction model for
+individual prognosis or diagnosis (TRIPOD),'' \emph{Ann. Intern. Med.},
+vol.~162, no.~1, pp.~55--63, 2015.
+
+\bibitem{cox1972} D.~R. Cox, ``Regression models and life-tables,'' \emph{J. R.
+Stat. Soc. B}, vol.~34, no.~2, pp.~187--220, 1972.
+
+\bibitem{hastie1990} T.~Hastie and R.~Tibshirani, \emph{Generalized Additive
+Models}. London, U.K.: Chapman \& Hall, 1990.
+
+\bibitem{tcga2014} Cancer Genome Atlas Research Network, ``Comprehensive
+molecular profiling of lung adenocarcinoma,'' \emph{Nature}, vol.~511,
+no.~7511, pp.~543--550, 2014.
+
+\bibitem{cbioportal2012} E.~Cerami \emph{et~al.}, ``The cBio cancer genomics
+portal: An open platform for exploring multidimensional cancer genomics data,''
+\emph{Cancer Discov.}, vol.~2, no.~5, pp.~401--404, 2012.
+
+\bibitem{chen2020} J.~Chen \emph{et~al.}, ``Genomic landscape of lung
+adenocarcinoma in East Asians,'' \emph{Nat. Genet.}, vol.~52, no.~2,
+pp.~177--186, 2020.
+
+\bibitem{ishwaran2008} H.~Ishwaran, U.~B. Kogalur, E.~H. Blackstone, and M.~S.
+Lauer, ``Random survival forests,'' \emph{Ann. Appl. Stat.}, vol.~2, no.~3,
+pp.~841--860, 2008.
+
+\bibitem{chen2016} T.~Chen and C.~Guestrin, ``XGBoost: A scalable tree boosting
+system,'' in \emph{Proc. 22nd ACM SIGKDD Int. Conf. Knowl. Discovery Data
+Mining}, 2016, pp.~785--794.
+
+\bibitem{katzman2018} J.~L. Katzman \emph{et~al.}, ``DeepSurv: Personalized
+treatment recommender system using a Cox proportional hazards deep neural
+network,'' \emph{BMC Med. Res. Methodol.}, vol.~18, no.~1, p.~24, 2018.
+
+\bibitem{polsterl2020} S.~P\"olsterl, ``scikit-survival: A library for
+time-to-event analysis built on top of scikit-learn,'' \emph{J. Mach. Learn.
+Res.}, vol.~21, no.~212, pp.~1--6, 2020.
+
+\bibitem{harrell1996} F.~E. Harrell, K.~L. Lee, and D.~B. Mark, ``Multivariable
+prognostic models: Issues in developing models, evaluating assumptions and
+adequacy, and measuring and reducing errors,'' \emph{Stat. Med.}, vol.~15,
+no.~4, pp.~361--387, 1996.
+
+\bibitem{wolpert1992} D.~H. Wolpert, ``Stacked generalization,'' \emph{Neural
+Netw.}, vol.~5, no.~2, pp.~241--259, 1992.
+\end{thebibliography}
+
+\end{document}
