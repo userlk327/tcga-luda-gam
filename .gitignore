@@ -13,3 +13,6 @@ results/
 .env
 venv/
 myenv/
+
+# Local Claude Code settings
+.claude/
