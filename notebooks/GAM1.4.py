@@ -53,8 +53,11 @@ OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
 TCGA_CSV   = DATA_DIR / "luad_tcga_pan_can_atlas_2018_clinical_data.csv"
 ONCOSG_CSV = DATA_DIR / "luad_oncosg_2020_clinical_data.csv"
 
-CONT_FEATS = ["AGE", "TMB", "MUT_COUNT", "FGA"]     # spline-smoothed
-LOG_FEATS  = {"TMB", "MUT_COUNT"}                    # log1p before splining
+# Mutation count is dropped: it is near-collinear with TMB (Spearman 0.98 in
+# TCGA), so keeping both makes the individual smooths uninterpretable. TMB (the
+# standardized, per-megabase metric) is retained.
+CONT_FEATS = ["AGE", "TMB", "FGA"]                  # spline-smoothed
+LOG_FEATS  = {"TMB"}                                 # log1p before splining
 CAT_FEATS  = ["STAGE", "SEX"]                        # linear (one-hot)
 DF_SPLINE  = 4
 L1_RATIO   = 0.5                                     # elastic net (let smooths survive)
@@ -275,7 +278,8 @@ col_index = {c: i for i, c in enumerate(design.columns)}
 orig_range = {f: (tcga[f].astype(float).quantile(0.02), tcga[f].astype(float).quantile(0.98))
               for f in CONT_FEATS}
 
-fig, axes = plt.subplots(2, 2, figsize=(12, 9)); axes = axes.ravel()
+fig, axes = plt.subplots(1, len(CONT_FEATS), figsize=(5 * len(CONT_FEATS), 4.5))
+axes = np.atleast_1d(axes).ravel()
 titles = {"AGE": "Age (years)", "TMB": "TMB (nonsynonymous)",
           "MUT_COUNT": "Mutation Count", "FGA": "Fraction Genome Altered"}
 for ax, f in zip(axes, CONT_FEATS):

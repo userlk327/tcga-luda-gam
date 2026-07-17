@@ -60,7 +60,9 @@ print("=" * 78)
 print(f"Device: {device}\n")
 
 CAT_FEATS = ["SEX", "STAGE"]
-NUM_FEATS = ["AGE", "TMB", "MUT_COUNT", "FGA"]
+# Mutation count dropped (Spearman 0.98 with TMB in TCGA) to keep the feature
+# set fair and non-redundant across all models.
+NUM_FEATS = ["AGE", "TMB", "FGA"]
 COMMON_FEATS = CAT_FEATS + NUM_FEATS
 
 # ============================================================================
