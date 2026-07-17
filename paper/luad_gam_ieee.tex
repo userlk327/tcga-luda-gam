@@ -13,8 +13,9 @@
 
 \begin{document}
 
-\title{Feature Transportability, Not Model Complexity, Governs External
-Generalization: A Controlled Survival-Model Benchmark in Lung Adenocarcinoma}
+\title{Tumor Stage Carries the Transportable Signal in Cross-Cohort Lung
+Adenocarcinoma Survival Prediction: A Controlled Benchmark of Machine-Learning
+and Additive Models}
 
 \author{
   \IEEEauthorblockN{Author Name}%
@@ -27,36 +28,41 @@ Generalization: A Controlled Survival-Model Benchmark in Lung Adenocarcinoma}
 \maketitle
 
 \begin{abstract}
-Survival-prediction models for lung adenocarcinoma (LUAD) are usually reported
-on a single cohort and rarely tested on independent data, so it is seldom clear
-how they behave under the cohort and platform shifts they will meet in practice.
-We set out to compare four machine-learning survival models (random survival
-forest, gradient boosting survival, XGBoost with a Cox objective, and DeepSurv),
-a spline generalized-additive-model (GAM) stacking ensemble, and a single,
-interpretable feature-level additive GAM, using TCGA-LUAD ($n=501$; $181$
-deaths) for development and an independent East-Asian cohort (OncoSG, $n=302$;
-$94$ deaths) for external validation. All models were confined to the features
-shared by both cohorts. Our central finding was unexpected. When we included a
-mutation-count feature that is nearly collinear with tumor mutational burden
-(Spearman $0.98$) and is measured $3.4\times$ lower in the external cohort, it
-silently and substantially degraded the external generalization of the flexible
-models---most severely the stacking ensemble, whose external concordance fell to
-$0.595$---while leaving the additive GAM untouched. Removing this single feature
-raised the ensemble to $0.649$ and lifted XGBoost and DeepSurv from $0.675$ and
-$0.674$ to $0.705$ and $0.706$, without changing the additive model ($0.679$ to
-$0.682$). On the cleaned feature set, modern machine learning generalized best,
-and the interpretable additive GAM remained statistically comparable ($C=0.682$,
-overlapping confidence intervals) while separating external risk tertiles
-(log-rank $p=2.2\times10^{-6}$) and admitting a likelihood-ratio-tested
-nonlinear age effect ($p=0.032$). We conclude that in cross-cohort survival
-prediction, feature transportability can matter more than model choice: a single
-non-transportable feature can dominate the apparent ranking of models, and an
-interpretable additive model offers useful robustness insurance against it.
+Machine-learning survival models for lung adenocarcinoma (LUAD) are usually
+reported on a single cohort and rarely tested on independent data, so it is
+seldom clear what actually transports to a new population. We benchmarked four
+machine-learning survival models (random survival forest, gradient boosting
+survival, XGBoost with a Cox objective, and DeepSurv), a spline
+generalized-additive-model (GAM) stacking ensemble, and an interpretable
+feature-level additive GAM, together with clinical and stage-only baselines,
+using TCGA-LUAD ($n=501$; $181$ deaths) for development and an independent
+East-Asian cohort (OncoSG, $n=302$; $94$ deaths) for external validation, on the
+features shared by both cohorts. Three findings emerged, none of them the
+headline we first expected. First, most of the transportable signal is
+tumor stage: a stage-and-sex model reached external concordance $C=0.691$,
+adding genomic features (tumor mutational burden, fraction of genome altered) to
+an additive model did not improve it ($0.682$), and the best machine-learning
+model ($0.705$) did not significantly exceed the stage-and-sex baseline under
+paired bootstrap. Second, one genomic feature was
+actively harmful: a raw mutation count, nearly collinear with mutational burden
+(Spearman $0.98$) and measured $3.4\times$ lower in the external cohort,
+significantly degraded XGBoost externally (paired bootstrap $+0.030$,
+$95\%$~CI~$[0.009,0.052]$ on removal) but left additive and forest models
+untouched---a model-specific, not complexity-driven, effect. Third, every
+model's concordance rose from internal to external evaluation, which reweighting
+to the development cohort's stage distribution shows to be substantially a
+case-mix effect---OncoSG's steeper stage--risk gradient---rather than
+transportability, cautioning against reading cross-cohort concordance as a
+transfer metric. Differences between the best models were not statistically
+significant under paired bootstrap. We conclude that in cross-cohort LUAD
+prognosis a simple, interpretable clinical model is hard to beat, genomic
+summary features transfer poorly and can mislead flexible learners, and
+apparent model rankings must be read against cohort case-mix.
 \end{abstract}
 
 \begin{IEEEkeywords}
 Survival analysis, lung adenocarcinoma, external validation, dataset shift,
-feature selection, generalized additive model, model interpretability.
+feature transportability, generalized additive model, benchmarking.
 \end{IEEEkeywords}
 
 % =====================================================================
@@ -64,47 +70,41 @@ feature selection, generalized additive model, model interpretability.
 % =====================================================================
 \IEEEPARstart{L}{ung} adenocarcinoma (LUAD) is the most common histological
 subtype of lung cancer and a leading cause of cancer death worldwide~\cite{siegel2023}.
-A large literature applies machine learning to LUAD survival prediction, yet
-most models are reported on a single cohort and validated only internally.
-Internal performance is a weak guide to how a model behaves on a new
-population~\cite{tripod2015}, and the gap is not merely one of sample: an
-external cohort can differ in ancestry, in the treatments patients received, and
-in the sequencing platform used to derive molecular features. Whether a model
-survives those shifts is the question that decides its clinical usefulness, and
-it is rarely asked.
+A large literature applies machine learning to LUAD survival prediction, usually
+on a single cohort with internal cross-validation. Internal performance,
+however, is a weak guide to behavior on a new population~\cite{tripod2015}: an
+external cohort can differ in ancestry, in case mix, and in the sequencing
+platform used to derive molecular features. The practical question is not which
+model scores highest on the development data, but what actually transports---and
+that question is rarely asked.
 
-We began with a conventional comparison. We trained four machine-learning
-survival models and a stacking ensemble that combines them, and we contrasted
-them with a deliberately simple, interpretable alternative---a feature-level
-generalized additive model (GAM) that keeps the Cox proportional-hazards
-form~\cite{cox1972} but allows smooth nonlinear effects for continuous
-covariates~\cite{hastie1990}. So that each fitted model could be transported
-without modification, we restricted every model to the features recorded in both
-our development cohort (TCGA-LUAD) and an independent validation cohort (OncoSG).
+We set out to answer it with a controlled comparison. We trained four
+machine-learning survival models and a stacking ensemble, contrasted them with a
+transparent feature-level additive model, and---because we wanted to know what
+each component was worth---compared all of them against clinical and stage-only
+baselines. So that every fitted model could be transported without
+modification, we confined them to the features recorded in both our development
+cohort (TCGA-LUAD) and an independent validation cohort (OncoSG).
 
-What we found was not the story we expected. In our first pass the stacking
-ensemble, competitive on internal data, appeared to collapse on external
-validation, and we were tempted to conclude that model complexity had failed to
-generalize. On closer inspection the cause was much more specific. One of the
-molecular features---a raw somatic mutation count---is almost perfectly
-correlated with tumor mutational burden (TMB) and, because the two cohorts were
-sequenced differently, is calibrated on a completely different scale in the
-external data. That single non-transportable feature, not the model class, was
-responsible for the apparent failure. Removing it reversed the ranking: the
-flexible machine-learning models became the strongest external performers, and
-the ensemble no longer collapsed.
+The results were more sobering, and more useful, than a leaderboard. Most
+of the signal that survived the move to the external cohort was tumor stage; the
+genomic features added little; the differences among the
+better models were within statistical noise; and one redundant, platform-shifted
+genomic feature quietly degraded a specific model. We also found that every
+model appeared to \emph{improve} on the external cohort, which turned out to be
+a property of that cohort's case mix rather than of the models. Taken together,
+these observations argue for humility about what cross-cohort benchmarks can
+show and for treating a simple clinical model as the bar any complex model must
+clear.
 
-This paper reports that investigation and its lesson. Our contributions are:
-(i) a leakage-free protocol that benchmarks six modeling strategies on an
-identical, transportable feature set, internally and on a genuinely independent
-cohort; (ii) a controlled demonstration that a single redundant,
-platform-shifted feature can silently dominate external generalization---severely
-for flexible learners, negligibly for an additive model---and can invert the
-conclusion one would draw about model complexity; and (iii) evidence that an
-interpretable additive GAM, though not the top performer once features are
-cleaned, is statistically comparable to the best model, robust to the offending
-feature, and equipped with a likelihood-ratio test that keeps its nonlinearity
-claims honest.
+Our contributions are: (i) a leakage-free benchmark of six modeling strategies
+plus clinical baselines, evaluated internally and on a genuinely independent
+cohort with paired-bootstrap inference; (ii) evidence that tumor stage carries
+most of the transportable prognostic signal in this setting, that genomic summary
+features transfer poorly, and that one such feature can significantly harm a
+flexible model; and (iii) a case-mix analysis showing that cross-cohort
+concordance can rise for reasons unrelated to transportability, so that model
+rankings across cohorts must be read with care.
 
 % =====================================================================
 \section{Materials and Methods}
@@ -118,120 +118,107 @@ non-positive overall-survival time, $501$ patients remained, of whom $181$
 ($36.1\%$) had a recorded death. The external validation cohort was the OncoSG
 East-Asian lung adenocarcinoma study (\texttt{luad\_oncosg\_2020})~\cite{chen2020},
 also from cBioPortal, with $302$ evaluable patients and $94$ deaths ($31.1\%$).
-The cohorts differ in ancestry, geography, and sequencing protocol, which is
-exactly what makes the external test informative.
+The cohorts differ in ancestry, geography, sequencing protocol, and---as we
+quantify below---stage distribution, which is what makes the external test
+demanding.
 
-\subsection{Features, harmonization, and a note on transportability}
-Only features present in \emph{both} cohorts were used, so that the fitted model
-could be applied unchanged to the external data. Six candidate features were
-shared: age at diagnosis, sex, AJCC tumor stage, TMB (nonsynonymous), somatic
-mutation count, and fraction of genome altered (FGA). Two observations shaped
-the final set. First, TMB and mutation count are near-duplicates---their
-Spearman correlation in TCGA is $0.98$---so including both is redundant and makes
-their individual contributions uninterpretable. Second, both are strongly
-platform-dependent: the external cohort's median TMB and mutation count are
-about a third of TCGA's ($1.87$ vs.\ $6.68$; $56$ vs.\ $192$), reflecting the
-lower mutational burden of predominantly non-smoking East-Asian LUAD and
-differences in sequencing. We therefore retained TMB, the standardized
-per-megabase metric, and dropped mutation count, leaving five features. As we
-show below, that decision---made on principle---turned out to change the study's
-conclusion, which is why we also report the six-feature results explicitly.
-Because the cohorts encode stage at different granularity, we collapsed both to
-the four major stages (I--IV); sex and survival-status encodings were reconciled
-between cohorts.
+\subsection{Features, harmonization, and transportability}
+Only features present in \emph{both} cohorts were used. Six were shared: age at
+diagnosis, sex, AJCC tumor stage, tumor mutational burden (TMB, nonsynonymous),
+somatic mutation count, and fraction of genome altered (FGA). Two facts shaped
+the working set. TMB and mutation count are near-duplicates (Spearman
+correlation $0.98$ in TCGA), so we retained TMB---the standardized
+per-megabase metric---and dropped mutation count, leaving five features;
+we report the effect of that removal explicitly, as it is central to one of our
+findings. Both genomic metrics are also strongly platform-dependent: the external
+cohort's median TMB and mutation count are about a third of TCGA's ($1.87$
+vs.\ $6.68$; $56$ vs.\ $192$), reflecting the lower mutational burden of
+predominantly non-smoking East-Asian LUAD and differences in sequencing. Because
+the cohorts encode stage at different granularity, we collapsed both to the four
+major stages (I--IV); sex and survival-status encodings were reconciled.
 
 \subsection{Preprocessing}
 Categorical variables (stage, sex) were one-hot encoded with the first level
 dropped, and missing continuous values were median-imputed. For the additive
-model, TMB was $\log(1+x)$-transformed to tame its right skew, features were
-standardized, and external spline inputs were clipped to the training knot range
-so the basis was never evaluated outside its support; the tree-based learners
-are invariant to monotone rescaling. All preprocessing was fit on the training
-data only. Within the internal cross-validation it was re-fit on each training
-fold and applied to the held-out fold, so that no information from held-out
-patients entered model fitting; for external validation it was fit on all of
-TCGA and applied once to OncoSG. This strictly out-of-sample scheme keeps the
-pipeline deployable for a single prospective patient---unlike within-cohort
-standardization, which needs the entire test cohort to compute local parameters
-and therefore cannot score a lone case.
+model, TMB was $\log(1+x)$-transformed and features were standardized, with
+external spline inputs clipped to the training knot range so the basis was never
+evaluated outside its support; tree learners are invariant to monotone
+rescaling. All preprocessing was fit on the training data only, re-fit on each
+training fold within the internal cross-validation, and fit on all of TCGA and
+applied once to OncoSG for external validation. This strictly out-of-sample
+scheme keeps the pipeline deployable for a single prospective patient---unlike
+within-cohort standardization, which needs the entire test cohort to compute
+local parameters and therefore cannot score a lone case.
 
 \subsection{Models}
-We compared six strategies. The four base learners were: a random survival
-forest~\cite{ishwaran2008} ($500$ trees, $\sqrt{p}$ features per split, minimum
-leaf size $3$); gradient boosting survival analysis with regression-tree base
-learners ($500$ stages, learning rate $0.05$, tree depth $3$); XGBoost~\cite{chen2016}
-with the \texttt{survival:cox} objective and early stopping; and
-DeepSurv~\cite{katzman2018}, a Cox proportional-hazards neural network
-($128$--$64$--$1$ units, ReLU activations, dropout $0.3$, Adam optimization with
-early stopping). For \texttt{survival:cox} we encoded censoring through the sign
-of the label so that censored patients contribute to the risk sets rather than
-being discarded.
-
-The fifth strategy was a \emph{stacking ensemble}~\cite{wolpert1992}: out-of-fold predictions from
-the four base learners were combined by a GAM meta-learner (an elastic-net Cox
-model with cubic B-spline smooths on each base-learner score). Base-learner
-early stopping within each fold used a nested internal split, never the held-out
-fold on which predictions were formed.
-
-The sixth strategy---the interpretable comparator---was a \emph{feature-level
-additive survival model}: an elastic-net Cox model ($\ell_1$ ratio $0.5$) in
-which each continuous feature enters through a cubic B-spline basis (four degrees
-of freedom) and stage and sex enter linearly,
-\begin{equation}
-\log h_i(t) = \log h_0(t) + \sum_{k} f_k(x_{ik}) + \boldsymbol{\beta}^{\top}\mathbf{z}_i,
-\end{equation}
-where the $f_k$ are the estimated smooths for age, TMB, and FGA and
-$\mathbf{z}_i$ collects the categorical terms. The regularization strength was
-chosen by internal cross-validation. It is the only model whose effect for each
-covariate can be read directly from a plot.
+We compared six strategies and two baselines. The four base learners were a
+random survival forest~\cite{ishwaran2008} ($500$ trees, $\sqrt{p}$ features per
+split, minimum leaf size $3$); gradient boosting survival analysis with
+regression-tree base learners ($500$ stages, learning rate $0.05$, depth $3$);
+XGBoost~\cite{chen2016} with the \texttt{survival:cox} objective and early
+stopping; and DeepSurv~\cite{katzman2018}, a Cox proportional-hazards neural
+network ($128$--$64$--$1$ units, ReLU, dropout $0.3$, Adam with early stopping).
+For \texttt{survival:cox} we encoded censoring through the sign of the label so
+censored patients contribute to the risk sets. The fifth strategy was a stacking
+ensemble~\cite{wolpert1992}: out-of-fold base predictions combined by a GAM
+meta-learner. The sixth was a feature-level additive model~\cite{hastie1990}---an
+elastic-net Cox proportional-hazards model~\cite{cox1972} ($\ell_1$ ratio $0.5$)
+with cubic B-spline smooths (four degrees of freedom) on each continuous feature
+and linear stage and sex terms. As baselines
+we fit the same additive machinery on age$+$stage$+$sex (``clinical'') and on
+stage$+$sex alone.
 
 \subsection{Evaluation}
-Discrimination was measured by Harrell's concordance index
-($C$)~\cite{harrell1996}. Internal performance on TCGA used leakage-free
-five-fold cross-validation with per-fold preprocessing; for the stacking
-ensemble, the meta-learner was fit on inner out-of-fold predictions so that no
-patient informed its own score. External performance used the model fit on all
-of TCGA and applied once to OncoSG, with $95\%$ confidence intervals (CIs) from
-$1{,}000$ bootstrap resamples of the external cohort. We stratified patients
-into risk tertiles and compared survival with the log-rank test and
-Kaplan--Meier curves. To test whether the additive model's flexibility was
-warranted, we performed a likelihood-ratio (LR) test comparing the full spline
-model against one in which the same continuous covariates entered linearly,
-using the Cox partial likelihood, reporting an overall and a per-feature test.
-All experiments used a fixed random seed and were implemented in Python with
-scikit-survival~\cite{polsterl2020}.
+Discrimination was Harrell's concordance index ($C$)~\cite{harrell1996}.
+Internal performance used leakage-free five-fold cross-validation with per-fold
+preprocessing; the ensemble meta-learner was fit on inner out-of-fold
+predictions. External performance used the model fit on all of TCGA and applied
+once to OncoSG, with $95\%$ confidence intervals (CIs) from $1{,}000$ bootstrap
+resamples. Crucially, because several of our claims concern \emph{differences}
+between models or feature sets on the same patients, we quantified those with a
+\emph{paired} bootstrap of the $C$-index difference (resampling patients and
+recomputing both scores), which is far tighter than comparing marginal CIs. We
+also stratified patients into risk tertiles (log-rank test, Kaplan--Meier
+curves) and, for the additive model, tested nonlinearity with a
+likelihood-ratio (LR) test against a linear Cox model, using the Cox partial
+likelihood. To probe whether the internal-to-external difference reflected case
+mix, we recomputed external $C$ with OncoSG stage-reweighted to TCGA's
+distribution. A fixed random seed was used throughout; because DeepSurv is
+sensitive to initialization, we report its external $C$ across five seeds.
+Analyses used Python and scikit-survival~\cite{polsterl2020}.
 
 % =====================================================================
 \section{Results}
 % =====================================================================
 
-\subsection{On the cleaned feature set, machine learning generalizes best}
-Table~\ref{tab:cindex} reports discrimination for all six models on the five
-transportable features, internally and externally. Internally the models were
-closely bunched ($C$ from $0.626$ to $0.660$), with the additive model best. The
-external picture differs: XGBoost and DeepSurv are the strongest transporters
-($C=0.705$ and $0.706$), each improving markedly over its internal estimate. The
-additive GAM follows at $0.682$, statistically indistinguishable from the leaders
-(its CI, $[0.626,0.740]$, overlaps theirs), and the stacking ensemble and the two
-weaker trees trail. No model collapses; every model except gradient boosting
-carries or improves its performance from TCGA to OncoSG. Read on its own, this
-table says simply that flexible machine learning generalizes at least as well as
-a simple additive model here---the opposite of what our first, six-feature
-analysis suggested.
+\subsection{Everything clusters, and no model clearly wins externally}
+Table~\ref{tab:cindex} reports discrimination for the six strategies on the five
+transportable features. Internally the models spanned $C=0.626$ to $0.660$;
+externally they spanned $0.636$ to $0.706$. XGBoost and DeepSurv were nominally
+strongest externally ($0.705$, $0.706$), the additive GAM followed ($0.682$),
+and the rest trailed---but a paired bootstrap of the differences found none of
+them significant: XGBoost minus the additive GAM was $+0.024$
+($95\%$~CI~$[-0.003,0.052]$) and DeepSurv minus the GAM was $+0.009$
+($[-0.022,0.042]$). With $94$ external events the honest statement is that we
+could not detect a difference between the leading models, not that one is best.
+DeepSurv's external $C$ itself varied from $0.688$ to $0.720$ across five seeds
+(mean $0.707$, SD $0.011$), comparable to the gaps between models.
 
 \begin{table}[t]
-\caption{Discrimination (concordance index) on the five transportable features:
-TCGA (internal, leakage-free five-fold cross-validation) and OncoSG (external,
-with $95\%$ bootstrap CIs). Rows ordered by external $C$.}
+\caption{Discrimination ($C$-index) on the five transportable features: TCGA
+(internal, leakage-free five-fold CV) and OncoSG (external, with $95\%$
+bootstrap CIs). Paired-bootstrap tests found no significant difference among the
+leading models. DeepSurv is shown at the primary seed (five-seed mean $0.707$,
+SD $0.011$).}
 \label{tab:cindex}
 \centering
 \begin{tabular}{lcc}
 \toprule
 Model & TCGA (internal) & OncoSG (external) \\
 \midrule
-DeepSurv                     & $0.651$ & $\mathbf{0.706}$ $[0.648,0.762]$ \\
+DeepSurv                     & $0.651$ & $0.706$ $[0.648,0.762]$ \\
 XGBoost--Cox                 & $0.628$ & $0.705$ $[0.653,0.761]$ \\
-Feature-level GAM            & $\mathbf{0.660}$ & $0.682$ $[0.626,0.740]$ \\
+Feature-level GAM            & $0.660$ & $0.682$ $[0.626,0.740]$ \\
 Random survival forest       & $0.626$ & $0.656$ $[0.596,0.718]$ \\
 GAM stacking ensemble        & $0.646$ & $0.649$ $[0.589,0.708]$ \\
 Gradient boosting survival   & $0.642$ & $0.636$ $[0.571,0.698]$ \\
@@ -239,190 +226,231 @@ Gradient boosting survival   & $0.642$ & $0.636$ $[0.571,0.698]$ \\
 \end{tabular}
 \end{table}
 
-\subsection{A single non-transportable feature dominates the ranking}
-The contrast that motivates this paper appears in Table~\ref{tab:delta}, which
-gives external discrimination \emph{before and after} removing mutation count.
-Adding this one redundant, platform-shifted feature does not perturb every model
-equally. It costs the stacking ensemble $0.054$ of external $C$, and it masks
-XGBoost and DeepSurv by about $0.03$ each---enough, in the six-feature analysis,
-to drag the ensemble to worst place and to make the additive model look like the
-best generalizer. The additive GAM, by contrast, is essentially unmoved
-($+0.003$), and the two other tree ensembles change negligibly. In other words,
-the feature the flexible learners could not transport was doing most of the work
-in the apparent model ranking. Mechanistically this is unsurprising: a learner
-that has fit structure in TCGA's mutation-count distribution is misled when the
-external cohort's values sit almost entirely below TCGA's, whereas an additive
-model with a mild penalty and a clipped, monotone-ish TMB spline barely reacts.
+\subsection{Tumor stage carries the transportable signal}
+The comparison against baselines (Table~\ref{tab:ladder}) is the study's most
+consequential result. A stage-and-sex additive model already reached external
+$C=0.691$; adding age lifted it slightly to $0.695$; and adding the genomic
+features (TMB and FGA) then \emph{lowered} it to $0.682$. The best
+machine-learning model reached $0.705$---only $0.010$ above the clinical model
+and $0.014$ above stage and sex alone. In other words, in this cross-cohort
+setting most of the signal that transports is tumor stage; age contributes a
+little; and the genomic summary features contribute nothing measurable. A paired
+bootstrap confirms that none of these increments is significant: adding age gave
+$+0.004$ ($95\%$~CI~$[-0.021,0.030]$) and adding the genomic features gave
+$-0.014$ ($[-0.041,0.012]$). Crucially, the best machine-learning model did not
+significantly exceed the stage-and-sex baseline either ($+0.014$,
+$[-0.016,0.043]$). No addition to stage---clinical or genomic, simple or
+complex---clears it by a detectable margin. These ladder comparisons, like the
+removal tests, are unadjusted for multiplicity; since all cross zero, correction
+would only reinforce the null.
 
 \begin{table}[t]
-\caption{External concordance index on OncoSG with and without the
-mutation-count feature. A single redundant, platform-shifted feature accounts
-for most of the difference between models.}
-\label{tab:delta}
+\caption{External concordance on OncoSG as features are added (additive model),
+with the best machine-learning model for reference. Genomic features do not
+improve external discrimination over a clinical model.}
+\label{tab:ladder}
 \centering
-\begin{tabular}{lccc}
+\begin{tabular}{lc}
 \toprule
-Model & With mut.\ count & Without & $\Delta$ \\
+Feature set & OncoSG external $C$ \\
 \midrule
-GAM stacking ensemble        & $0.595$ & $0.649$ & $+0.054$ \\
-DeepSurv                     & $0.674$ & $0.706$ & $+0.032$ \\
-XGBoost--Cox                 & $0.675$ & $0.705$ & $+0.030$ \\
-Feature-level GAM            & $0.679$ & $0.682$ & $+0.003$ \\
-Random survival forest       & $0.660$ & $0.656$ & $-0.004$ \\
-Gradient boosting survival   & $0.641$ & $0.636$ & $-0.005$ \\
+Stage $+$ sex                      & $0.691$ \\
+$+$ age (clinical)                 & $0.695$ \\
+$+$ TMB, FGA (additive GAM)        & $0.682$ \\
+\midrule
+Best machine-learning (XGBoost)    & $0.705$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{Risk stratification holds in the external cohort}
-Stratifying OncoSG patients into tertiles of the additive model's risk score
-produced well-separated survival curves (Fig.~\ref{fig:km}), with a log-rank
-$p=2.2\times10^{-6}$ between the low- and high-risk groups (multivariable
-log-rank $p=9.0\times10^{-6}$); the same stratification on TCGA gave
-$p=1.5\times10^{-9}$. The stacking ensemble also stratified the external cohort,
-though more weakly ($p=2.8\times10^{-4}$), consistent with its lower
-discrimination. Clean risk groups are therefore achievable externally with a
-transparent model.
+\subsection{A non-transportable feature harms a specific model}
+Genomic features not only fail to help; one can actively hurt. Table~\ref{tab:delta}
+gives the paired-bootstrap effect of removing mutation count---the feature most
+shifted across platforms. Its removal significantly improved XGBoost
+($+0.030$, $95\%$~CI~$[0.009,0.052]$) and, within its seed variability,
+marginally helped DeepSurv ($+0.022$, $[-0.007,0.049]$), but left the random
+forest, gradient boosting, and the additive model statistically unchanged. The stacking ensemble showed the
+largest shift of all (a $0.054$ point estimate), consistent with a meta-learner
+compounding its base learners' corrupted predictions. Importantly, the two other
+tree ensembles were unaffected, so this is \emph{not} a story about flexible
+versus simple models: it is specific to XGBoost, DeepSurv, and the ensemble
+built on them. This XGBoost effect is the only ML-related comparison to reach
+significance; as one of roughly a dozen paired tests, with a lower confidence
+bound ($0.009$) just above zero, it is best read as a nominal, boundary result
+rather than a firmly established effect. Mechanistically, a learner that fit
+fine structure in TCGA's
+mutation-count distribution is misled when the external cohort's values sit far
+below TCGA's; a penalized additive model with a clipped spline has little such
+structure to lose, though shrinkage and clipping---not the additive form
+alone---plausibly share the credit.
+
+\begin{table}[t]
+\caption{Effect of removing the platform-shifted mutation-count feature on
+external $C$ (paired bootstrap; positive $=$ removal helps). The effect is
+model-specific, significant only for XGBoost.}
+\label{tab:delta}
+\centering
+\begin{tabular}{lcc}
+\toprule
+Model & $\Delta C$ on removal & $95\%$ CI (paired) \\
+\midrule
+XGBoost--Cox                 & $+0.030$ & $[+0.009,+0.052]$ \\
+DeepSurv                     & $+0.022$ & $[-0.007,+0.049]$ \\
+Feature-level GAM            & $+0.003$ & $[-0.005,+0.011]$ \\
+Random survival forest       & $-0.004$ & $[-0.017,+0.009]$ \\
+Gradient boosting survival   & $-0.005$ & $[-0.019,+0.009]$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Rising external concordance is a case-mix effect}
+Every model's $C$ rose from internal to external evaluation
+(Table~\ref{tab:cindex}), which is unusual---models normally degrade out of
+sample. The explanation is, at least in part, case mix, and we can show it
+directly. OncoSG contains far more advanced-stage disease than TCGA (stage
+I/II/III/IV: $45/18/30/6\%$ vs.\ $54/24/16/5\%$) and has a steeper stage--risk
+gradient (stage-IV event rate $0.74$ vs.\ $0.62$; stages I--III lower than
+TCGA). A cohort in which stage separates risk more sharply is easier to
+discriminate. When we reweight OncoSG to TCGA's stage distribution, external
+concordance falls by $0.014$--$0.020$ (the additive model from $0.682$ to
+$0.668$, XGBoost from $0.705$ to $0.689$), recovering a substantial part of the
+internal-to-external rise---though not all of it, so case mix contributes to but
+does not fully explain the inflation. This is a caution for the field: a higher $C$ on an external
+cohort does not by itself demonstrate good transfer.
+
+\subsection{Risk stratification and interpretability}
+The additive model produced clean external risk groups: tertiles of its risk
+score separated OncoSG survival with a log-rank $p=2.2\times10^{-6}$ between low-
+and high-risk groups (Fig.~\ref{fig:km}; multivariable $p=9.0\times10^{-6}$),
+and $p=1.5\times10^{-9}$ on TCGA. Its smooths (Fig.~\ref{fig:smooths}) and the LR
+test (Table~\ref{tab:lr}) show that nonlinearity is, at most, weakly supported:
+the overall test is marginal ($\text{LR}=13.7$, $\mathrm{df}=6$, $p=0.033$) and,
+of the three continuous features tested, only age reaches nominal significance
+($p=0.032$)---which does not survive a Bonferroni correction for three tests
+($0.017$). The honest reading is that nonlinearity is barely detectable and, if
+present, is an age effect (a shallow J-shape, whose steep tails sit in sparse
+data); TMB and FGA are adequately linear. The value of the additive model here
+is transparency and robustness rather than a nonlinear edge.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{gam14_km_oncosg.png}
 \caption{Kaplan--Meier curves for OncoSG patients stratified into tertiles of the
-feature-level additive model's risk score. Groups separate clearly on this fully
-external cohort (log-rank $p=2.2\times10^{-6}$).}
+additive model's risk score (log-rank $p=2.2\times10^{-6}$).}
 \label{fig:km}
 \end{figure}
-
-\subsection{Where nonlinearity is, and is not, justified}
-Because the additive model's appeal is interpretability, we tested whether its
-nonlinearity is real rather than decorative. The smooths are shown in
-Fig.~\ref{fig:smooths}, and the LR test in Table~\ref{tab:lr}. Allowing
-nonlinearity improves fit over a linear Cox model overall ($\text{LR}=13.7$,
-$\mathrm{df}=6$, $p=0.033$), and the improvement is carried almost entirely by
-age ($p=0.032$), whose effect is J-shaped: risk falls through middle age and
-rises in older patients. We attribute the significant nonlinearity to this
-mid-range curvature, which sits in dense data; the steep behavior at the extreme
-ages, where patients are sparse, should not be over-read. The TMB and FGA
-smooths are \emph{not} statistically supported ($p=0.21$ and $p=0.27$), so for
-those features a linear term suffices---a distinction the test exists to enforce.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{gam14_smooths.png}
 \caption{Estimated smooth contributions $f_k$ (solid) with a linear reference
-(dashed) for each continuous feature, fit on TCGA. Only the age effect is
-statistically significant (Table~\ref{tab:lr}); rug marks show data density, and
-the sparse tails should be read with caution.}
+(dashed), fit on TCGA. Only the age effect approaches significance
+(Table~\ref{tab:lr}), and not after multiplicity correction; rug marks show
+data density, and the sparse tails should be read with caution.}
 \label{fig:smooths}
 \end{figure}
 
 \begin{table}[t]
-\caption{Likelihood-ratio test of nonlinearity (spline vs.\ linear) on TCGA,
-using the Cox partial likelihood.}
+\caption{Likelihood-ratio test of nonlinearity (spline vs.\ linear) on TCGA.
+With three tests, a Bonferroni threshold is $p=0.017$; no feature clears it.}
 \label{tab:lr}
 \centering
 \begin{tabular}{lccc}
 \toprule
 Term & LR statistic & df & $p$ \\
 \midrule
-Overall (spline vs.\ linear) & $13.70$ & $6$ & $\mathbf{0.033}$ \\
-Age                          & $6.87$  & $2$ & $\mathbf{0.032}$ \\
+Overall (spline vs.\ linear) & $13.70$ & $6$ & $0.033$ \\
+Age                          & $6.87$  & $2$ & $0.032$ \\
 TMB                          & $3.14$  & $2$ & $0.208$ \\
 Fraction genome altered      & $2.62$  & $2$ & $0.269$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{The additive result does not depend on the shifted genomic features}
-To check that the additive model is not quietly relying on the platform-shifted
-genomic features, we refit it on only age, stage, FGA, and sex---dropping TMB as
-well as mutation count. External discrimination was essentially unchanged
-($C=0.687$; internal $0.662$), and risk stratification remained strong
-($p=3.0\times10^{-8}$). The additive model's transportability thus rests on the
-well-matched clinical features, not on the genomic quantities that shift across
-platforms.
+\subsection{Robustness of the preprocessing choice}
+Because the genomic features are platform-shifted, one might standardize the
+external features within OncoSG rather than with TCGA parameters. We deliberately
+did not, since within-cohort standardization needs the whole test cohort and so
+cannot score a lone prospective patient. Empirically it also does not help: a
+sensitivity analysis found it changed external $C$ by at most $0.026$, with mixed
+sign, slightly reducing the two strongest models. The results are not an artifact
+of the standardization scheme.
 
 % =====================================================================
 \section{Discussion}
 % =====================================================================
-The lesson of this study is that in cross-cohort survival prediction, which
-features one includes can matter more than which model one chooses. A single
-feature---redundant with another and calibrated differently across sequencing
-platforms---was enough to invert the ranking of six models: with it, an
-interpretable additive model looked like the best generalizer and a stacking
-ensemble looked like a failure; without it, flexible machine learning was clearly
-strongest and the ensemble was unremarkable. The models differed only in how much
-they leaned on the offending feature. Flexible learners, which can carve fine
-structure out of the development distribution, were the most exposed when that
-structure did not transport---an instance of the well-known sensitivity of
-learned models to dataset shift~\cite{moreno2012}. The additive model, penalized
-and constrained to a smooth per-feature form, had little structure to lose.
+Read together, our results tell a modest but useful story. In cross-cohort LUAD
+survival prediction, the signal that transports is dominated by tumor stage; a
+clinical (age, stage, sex) model is within $0.01$ of the best of six
+machine-learning strategies, a gap that is not statistically significant under
+paired bootstrap, and adding genomic summary features does not improve---and if
+anything worsens---external discrimination. The differences among the leading
+models are not statistically significant at this sample size, and the one place
+a genomic feature clearly mattered, it \emph{hurt}: a redundant, platform-shifted
+mutation count significantly degraded XGBoost while leaving forests and the
+additive model untouched. That the harm was confined to particular models, not
+to a model class, is itself instructive---it is a feature-transportability
+effect filtered through each model's willingness to exploit fine structure, an
+instance of the sensitivity of learned models to dataset shift~\cite{moreno2012},
+rather than a simple lesson about complexity.
 
-One might object that we standardized the external features with TCGA parameters
-despite the known baseline shift in East-Asian TMB, and that aligning the
-distributions within the external cohort would be more appropriate. We
-deliberately did not, for two reasons. Practically, within-cohort
-standardization requires the entire test cohort to compute local parameters and
-so forfeits deployability for the lone prospective patient a prognostic tool
-must serve. Empirically, it also does not help: standardizing the external
-continuous features within OncoSG rather than with TCGA parameters changed
-external $C$ by at most $0.026$, with mixed sign across models, and slightly
-reduced discrimination for the two strongest models (XGBoost and DeepSurv). That
-the flexible models generalized well under strict, deployable preprocessing---once
-the non-transportable mutation count was removed---indicates they can be robust
-to scalar platform shifts when the feature space is curated with care.
+The internal-to-external rise in concordance is a reminder that cross-cohort
+$C$-indices are not a clean transfer metric. Because OncoSG's case mix makes
+stage a sharper discriminator, every model scored higher there; a naive reading
+would credit the models with excellent transfer, when much of the effect belongs
+to the cohort. Benchmarks that compare models across cohorts should report case
+mix and, where possible, hold it constant.
 
-This reframes a tempting but wrong conclusion. Had we stopped at the six-feature
-analysis, we would have reported that ensembling ``overfits'' and that simplicity
-generalizes better. That reading does not survive a careful look: the ensemble
-does not collapse once the non-transportable feature is removed, and the simple
-model wins only by being unaffected by a variable that should not have been there
-in the first place. The honest account is about feature transportability, and it
-cuts against reflexively blaming or crediting model complexity.
+None of this argues against interpretable modeling---if anything it argues for it.
+An additive model matched the best learners within statistical noise, stratified
+the external cohort as sharply as any model, and was the model least disturbed by
+the harmful feature; its transparency also makes it a natural reference against
+which to detect when a flexible model is exploiting non-transportable structure.
+We caution, though, against over-crediting its ``additive form'': elastic-net
+shrinkage and spline clipping are equally plausible sources of its robustness.
 
-None of this makes the interpretable model dispensable. On the cleaned features
-it is statistically comparable to the best learners ($0.682$ vs.\ $0.706$, with
-overlapping CIs), it stratifies the external cohort as sharply as any model, its
-single nonlinear effect is backed by a formal test, and---most relevant
-here---it was the model least disturbed by the feature that fooled the others.
-For a prognostic tool that must travel between institutions, that robustness and
-transparency are worth having even at a small cost in peak discrimination; at the
-least, an additive model makes a useful reference against which to detect when a
-flexible model is exploiting non-transportable structure.
-
-Our study has clear limitations. It uses a single external cohort; a second would
-strengthen the generalizability claim, though the feature set that transfers to
-other cohorts may differ. The models are confined to six routinely available
-clinical and genomic features, and richer molecular data (gene expression,
-driver-gene status, or the TCGA-only scores we could not transport) may add
-signal at the cost of transportability---the very tension this paper examines.
-The event count ($181$ deaths) limits power, visible in the wide confidence
-intervals. Finally, our platform-shift analysis is observational: we identify
-mutation count as non-transportable and show its outsized effect, but a
-prospective, harmonized re-measurement would be needed to separate biological
-from technical contributions to the shift.
+Our study has clear limitations. It uses a single external cohort, and the
+finding that stage dominates may itself be specific to this cohort pair; a
+second cohort would test it. Because the thesis rests on stage, it also assumes
+the two cohorts stage patients comparably: if they use different AJCC editions
+or pathological versus clinical staging, part of the apparent transportable
+stage signal could be a harmonization artifact, which documented, matched
+staging conventions would help resolve. Conversely, a convention mismatch would
+tend to inject noise into stage and depress its transported signal, so the fact
+that stage transports well is itself mild evidence that the conventions are not
+badly discordant. The models are confined to six routinely available
+features, and richer molecular data (gene expression, driver-gene status) might
+transport differently. With $181$ development and $94$ external events the study
+is underpowered to separate closely matched models, which is why we report
+paired intervals and decline to name a winner. DeepSurv's seed sensitivity
+(SD $0.011$) places its exact ranking within the noise floor. Finally, the
+platform-shift analysis is observational: we show mutation count is
+non-transportable and quantify its effect, but separating biological from
+technical contributions to the shift would require harmonized re-measurement.
 
 % =====================================================================
 \section{Conclusion}
 % =====================================================================
-Comparing four machine-learning survival models, a stacking ensemble, and an
-interpretable additive model for LUAD under external validation, we found that a
-single redundant, platform-shifted feature dominated the apparent ranking:
-including it made the flexible models look worse and the simple model look best,
-while removing it reversed the order. On the cleaned feature set, machine
-learning generalized best and the interpretable additive model remained
-statistically comparable, robust, and transparent. The practical message is to
-scrutinize feature transportability before attributing external success or
-failure to model complexity, and to keep an interpretable model in the
-comparison as a check on what the flexible ones are learning.
+Benchmarking four machine-learning survival models, a stacking ensemble, an
+interpretable additive model, and clinical baselines for LUAD under external
+validation, we found that tumor stage carries most of the transportable
+prognostic signal, that genomic summary features add little externally and one
+can actively harm a flexible model, and that apparent gains in cross-cohort
+concordance can reflect case mix rather than transfer. A simple, interpretable
+clinical model is hard to beat in this setting and should be the baseline any
+complex model must clear. The broader message is one of measurement discipline:
+external validation is necessary but not sufficient, and its concordance must be
+read against baselines, paired uncertainty, and cohort case mix before it is
+taken as evidence that a model---or a feature---has generalized.
 
 % =====================================================================
 \section*{Reproducibility}
 % =====================================================================
 All preprocessing was fit on the development data only, with per-fold refitting
-inside the internal cross-validation; a fixed random seed was used throughout.
-Analysis code is available at \url{https://github.com/userlk327/tcga-luda-gam}.
-Both cohorts are publicly available through cBioPortal.
+inside the internal cross-validation; a fixed random seed was used throughout,
+and DeepSurv is reported across seeds. Analysis code is available at
+\url{https://github.com/userlk327/tcga-luda-gam}. Both cohorts are publicly
+available through cBioPortal.
 
 % =====================================================================
 \begin{thebibliography}{99}
@@ -435,12 +463,6 @@ pp.~17--48, 2023.
 Moons, ``Transparent reporting of a multivariable prediction model for
 individual prognosis or diagnosis (TRIPOD),'' \emph{Ann. Intern. Med.},
 vol.~162, no.~1, pp.~55--63, 2015.
-
-\bibitem{cox1972} D.~R. Cox, ``Regression models and life-tables,'' \emph{J. R.
-Stat. Soc. B}, vol.~34, no.~2, pp.~187--220, 1972.
-
-\bibitem{hastie1990} T.~Hastie and R.~Tibshirani, \emph{Generalized Additive
-Models}. London, U.K.: Chapman \& Hall, 1990.
 
 \bibitem{tcga2014} Cancer Genome Atlas Research Network, ``Comprehensive
 molecular profiling of lung adenocarcinoma,'' \emph{Nature}, vol.~511,
@@ -466,17 +488,23 @@ Mining}, 2016, pp.~785--794.
 treatment recommender system using a Cox proportional hazards deep neural
 network,'' \emph{BMC Med. Res. Methodol.}, vol.~18, no.~1, p.~24, 2018.
 
-\bibitem{polsterl2020} S.~P\"olsterl, ``scikit-survival: A library for
-time-to-event analysis built on top of scikit-learn,'' \emph{J. Mach. Learn.
-Res.}, vol.~21, no.~212, pp.~1--6, 2020.
+\bibitem{wolpert1992} D.~H. Wolpert, ``Stacked generalization,'' \emph{Neural
+Netw.}, vol.~5, no.~2, pp.~241--259, 1992.
 
 \bibitem{harrell1996} F.~E. Harrell, K.~L. Lee, and D.~B. Mark, ``Multivariable
 prognostic models: Issues in developing models, evaluating assumptions and
 adequacy, and measuring and reducing errors,'' \emph{Stat. Med.}, vol.~15,
 no.~4, pp.~361--387, 1996.
 
-\bibitem{wolpert1992} D.~H. Wolpert, ``Stacked generalization,'' \emph{Neural
-Netw.}, vol.~5, no.~2, pp.~241--259, 1992.
+\bibitem{polsterl2020} S.~P\"olsterl, ``scikit-survival: A library for
+time-to-event analysis built on top of scikit-learn,'' \emph{J. Mach. Learn.
+Res.}, vol.~21, no.~212, pp.~1--6, 2020.
+
+\bibitem{cox1972} D.~R. Cox, ``Regression models and life-tables,'' \emph{J. R.
+Stat. Soc. B}, vol.~34, no.~2, pp.~187--220, 1972.
+
+\bibitem{hastie1990} T.~Hastie and R.~Tibshirani, \emph{Generalized Additive
+Models}. London, U.K.: Chapman \& Hall, 1990.
 
 \bibitem{moreno2012} J.~G. Moreno-Torres, T.~Raeder, R.~Alaiz-Rodr\'iguez,
 N.~V. Chawla, and F.~Herrera, ``A unifying view on dataset shift in
