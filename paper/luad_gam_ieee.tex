@@ -150,7 +150,10 @@ are invariant to monotone rescaling. All preprocessing was fit on the training
 data only. Within the internal cross-validation it was re-fit on each training
 fold and applied to the held-out fold, so that no information from held-out
 patients entered model fitting; for external validation it was fit on all of
-TCGA and applied once to OncoSG.
+TCGA and applied once to OncoSG. This strictly out-of-sample scheme keeps the
+pipeline deployable for a single prospective patient---unlike within-cohort
+standardization, which needs the entire test cohort to compute local parameters
+and therefore cannot score a lone case.
 
 \subsection{Models}
 We compared six strategies. The four base learners were: a random survival
@@ -354,6 +357,20 @@ structure out of the development distribution, were the most exposed when that
 structure did not transport---an instance of the well-known sensitivity of
 learned models to dataset shift~\cite{moreno2012}. The additive model, penalized
 and constrained to a smooth per-feature form, had little structure to lose.
+
+One might object that we standardized the external features with TCGA parameters
+despite the known baseline shift in East-Asian TMB, and that aligning the
+distributions within the external cohort would be more appropriate. We
+deliberately did not, for two reasons. Practically, within-cohort
+standardization requires the entire test cohort to compute local parameters and
+so forfeits deployability for the lone prospective patient a prognostic tool
+must serve. Empirically, it also does not help: standardizing the external
+continuous features within OncoSG rather than with TCGA parameters changed
+external $C$ by at most $0.026$, with mixed sign across models, and slightly
+reduced discrimination for the two strongest models (XGBoost and DeepSurv). That
+the flexible models generalized well under strict, deployable preprocessing---once
+the non-transportable mutation count was removed---indicates they can be robust
+to scalar platform shifts when the feature space is curated with care.
 
 This reframes a tempting but wrong conclusion. Had we stopped at the six-feature
 analysis, we would have reported that ensembling ``overfits'' and that simplicity

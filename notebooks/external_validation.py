@@ -348,6 +348,40 @@ print("-" * 46)
 for m, c, lo, hi in rows:
     print(f"{m:<16} {c:>8.4f}   [{lo:.4f}, {hi:.4f}]")
 
+# ---------------------------------------------------------------------------
+# Sensitivity: within-cohort standardization of the continuous features.
+# We standardize with TCGA parameters (deployable for a lone prospective
+# patient); here we check whether standardizing the external continuous
+# features with OncoSG's own mean/std instead would change the result.
+# ---------------------------------------------------------------------------
+onco_ct = pre.transform(onco[COMMON_FEATS])            # OHE + TCGA-median-imputed
+n_cat = onco_ct.shape[1] - len(NUM_FEATS)
+Xex_w = Xex.copy()
+num_block = onco_ct[:, n_cat:]                          # external continuous, raw
+Xex_w[:, n_cat:] = (num_block - num_block.mean(0)) / (num_block.std(0) + 1e-8)
+
+ext_pred_w = np.column_stack([
+    rsf_f.predict(Xex_w), gbs_f.predict(Xex_w),
+    xm_f.predict(xgb.DMatrix(Xex_w), iteration_range=(0, it_f)),
+    ds_predict(net_f, Xex_w),
+])
+meta_ex_w = pd.DataFrame(ext_pred_w, columns=META)
+for f in META:
+    meta_ex_w[f] = meta_ex_w[f].clip(meta_tr[f].min(), meta_tr[f].max())
+risk_gam_w = gam.predict(build_spline_matrix(meta_ex_w, fit=False).values)
+
+print("\nWithin-cohort standardization sensitivity (external C, TCGA-std -> within):")
+sens = []
+for i, m in enumerate(META):
+    c0 = concordance_index_censored(y_onco_ev, y_onco_ti, ext_pred[:, i])[0]
+    c1 = concordance_index_censored(y_onco_ev, y_onco_ti, ext_pred_w[:, i])[0]
+    sens.append((m, c0, c1)); print(f"  {m:<12} {c0:.4f} -> {c1:.4f}  ({c1-c0:+.4f})")
+c0g = concordance_index_censored(y_onco_ev, y_onco_ti, ext_risk_gam)[0]
+c1g = concordance_index_censored(y_onco_ev, y_onco_ti, risk_gam_w)[0]
+sens.append(("Ensemble", c0g, c1g)); print(f"  {'Ensemble':<12} {c0g:.4f} -> {c1g:.4f}  ({c1g-c0g:+.4f})")
+max_delta = max(abs(c1 - c0) for _, c0, c1 in sens)
+print(f"  max |delta| across models = {max_delta:.4f}")
+
 # KM stratification on OncoSG by GAM risk tertiles
 risk_grp = pd.qcut(ext_risk_gam, 3, labels=["Low", "Medium", "High"])
 lr = logrank_test(y_onco_ti[risk_grp == "Low"], y_onco_ti[risk_grp == "High"],
@@ -382,7 +416,11 @@ with open(OUTPUT_DIR / "external_validation_oncosg.txt", "w", encoding="utf-8") 
     f.write(f"Common features: {COMMON_FEATS}\n\n")
     f.write(summary.to_string(index=False))
     f.write(f"\n\nKM (GAM tertiles): Low vs High p={lr.p_value:.4e}, "
-            f"multivariate p={mv.p_value:.4e}\n")
+            f"multivariate p={mv.p_value:.4e}\n\n")
+    f.write("Within-cohort standardization sensitivity (external C, TCGA-std -> within):\n")
+    for m, c0, c1 in sens:
+        f.write(f"  {m:<12} {c0:.4f} -> {c1:.4f}  ({c1-c0:+.4f})\n")
+    f.write(f"  max |delta| across models = {max_delta:.4f}\n")
 
 print(f"\n✓ Saved: results/external_validation_oncosg.txt / .csv")
 print(f"✓ Saved: results/external_km_oncosg.png")
